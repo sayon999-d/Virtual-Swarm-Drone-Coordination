@@ -4,6 +4,8 @@ An interactive React + TypeScript simulation for experimenting with coordinated 
 
 The app renders the swarm on a live canvas, exposes tuning controls through an operations dashboard, and models each drone as an autonomous agent that reacts to nearby peers, environmental hazards, and shared communication signals.
 
+Live simulation: https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/
+
 ## GitHub Pages Fixes Applied
 
 The deployment issues were caused by missing GitHub Pages automation and by Vite building asset URLs as if the app were hosted from the domain root. On GitHub Pages project sites, the app is served from a repository subpath such as `/Virtual-Swarm-Drone-Coordination/`.
