@@ -14,8 +14,6 @@ export class InternalAgent {
     target: Vector2 | null
   ): Vector2 {
     const profile = currentState.behaviorProfile || 'Worker';
-    
-    // Adjust perception radius based on profile
     const pMult = currentState.perceptionMult || 1.0;
     
     let separation = this.computeSeparation(currentState, neighbors, config.separationRadius, config.maxSpeed);
@@ -25,8 +23,6 @@ export class InternalAgent {
     let formationTarget = this.computeFormationTarget(currentState, target, config.maxSpeed);
     let wander = this.computeWander(currentState);
     let communication = this.computeCommunication(currentState, neighbors, config.maxSpeed, profile);
-
-    // Profile-based weight balancing
     let weights = {
       separation: config.separationWeight,
       alignment: config.alignmentWeight,
@@ -57,8 +53,6 @@ export class InternalAgent {
         weights.alignment *= 1.5; // Better group synchronization
         break;
     }
-    
-    // Apply local stability overrides
     weights.separation *= currentState.localSeparationMult || 1.0;
     weights.cohesion *= currentState.localCohesionMult || 1.0;
     weights.target *= currentState.localTargetMult || 1.0;
@@ -75,8 +69,6 @@ export class InternalAgent {
     
     const fMult = profile === 'Defender' ? 1.5 : profile === 'Scout' ? 1.2 : profile === 'Worker' ? 0.8 : 1.0;
     const currentMaxForce = config.maxForce * fMult;
-
-    // Soft forces (limited by maxForce for smooth movement)
     let softForces = new Vector2(0, 0);
     softForces = softForces.add(alignment);
     softForces = softForces.add(cohesion);
@@ -85,24 +77,17 @@ export class InternalAgent {
     softForces = softForces.add(communication);
     
     softForces = softForces.limit(currentMaxForce);
-
-    // Hard forces
     acceleration = acceleration.add(softForces);
     acceleration = acceleration.add(separation);
     acceleration = acceleration.add(obstacleAvoidance);
-
-    // Profile specific overrides
     if (profile === 'Worker' && target && currentState.targetOffset) {
       const targetPos = target.add(currentState.targetOffset);
       const distToTarget = currentState.position.distance(targetPos);
       if (distToTarget < 30) {
-        // Workers have better precision braking for slots
         const braking = currentState.velocity.mult(-0.95);
         acceleration = acceleration.add(braking);
       }
     }
-
-    // Final safety limit
     return acceleration.limit(currentMaxForce * 20);
   }
 
@@ -115,7 +100,6 @@ export class InternalAgent {
       if (neighbor.messages && neighbor.messages.length > 0) {
         for (const msg of neighbor.messages) {
           if (msg.type === 'DISTRESS') {
-            // Relays and Defenders react more strongly to distress
             let importance = 1.0;
             if (profile === 'Relay') importance = 2.5;
             if (profile === 'Defender') importance = 1.8;
@@ -123,25 +107,18 @@ export class InternalAgent {
             distressCenter = distressCenter.add(neighbor.position.mult(importance));
             distressCount += importance;
           } else if (msg.type === 'LOW_ENERGY') {
-            // Adjust response to low energy teammates based on profile
-            // Defenders and Workers are more supportive of the team's health
             let careFactor = 1.0;
             if (profile === 'Defender') careFactor = 1.8;
             if (profile === 'Worker') careFactor = 1.4;
             if (profile === 'Scout') careFactor = 0.2; // Scouts don't stop for slow units
-            
-            // Apply braking force proportional to how many neighbors are low on energy
             steer = steer.add(state.velocity.mult(-0.08 * careFactor));
           } else if (msg.type === 'HAZARD_DETECTED' && msg.position) {
-            // Scouts react very strongly to hazards, being the eyes of the fleet
-            // Defenders also try to move between the hazard and the rest if possible
             let reactRadius = profile === 'Scout' ? 180 : profile === 'Defender' ? 120 : 100;
             let fearMultiplier = profile === 'Scout' ? 2.5 : 1.0;
             
             const d = state.position.distance(msg.position);
             if (d > 0 && d < reactRadius) {
               let diff = state.position.sub(msg.position).normalize();
-              // Exponential push-away from reported hazard positions
               const force = (reactRadius / d) * fearMultiplier;
               steer = steer.add(diff.mult(force));
             }
@@ -152,7 +129,6 @@ export class InternalAgent {
 
     if (distressCount > 0) {
       distressCenter = distressCenter.div(distressCount);
-      // Seek the distress center
       let desired = distressCenter.sub(state.position);
       if (desired.magSq() > 0) {
         desired = desired.normalize().mult(maxSpeed);
@@ -197,36 +173,22 @@ export class InternalAgent {
       if (d > 0 && d < separationRadius) {
         let diff = state.position.sub(neighbor.position);
         diff = diff.normalize();
-        
-        // Refined inverse square law for much stronger repulsion when very close
-        // This prevents them from actually touching
         let force = 2000 / (d * d);
         if (d < 5) {
-          // Drastic boost for extreme proximity to prevent pixel-perfect overlap
           force *= (15 / Math.max(0.1, d));
         }
         force = Math.min(500, force); // Increased cap for critical avoidance
-
-        // Add slight random jitter to prevent drones from getting stuck in perfect alignment
         const jitter = new Vector2((Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1);
         diff = diff.add(jitter).normalize().mult(force);
         
         steer = steer.add(diff);
         count++;
-
-        // Enhanced predictive avoidance: analyze relative velocity and time-to-collision
         const relativeVel = neighbor.velocity.sub(state.velocity);
-        
-        // diff is the normalized vector pointing from neighbor to current drone
-        // closingSpeed > 0 means the distance between them is decreasing
         const closingSpeed = relativeVel.dot(diff);
         
         if (closingSpeed > 0) {
           const timeToCollision = d / closingSpeed;
-          
-          // If a collision is imminent (e.g., within 2.5 seconds)
           if (timeToCollision < 2.5) {
-            // Calculate an evasive force that gets exponentially stronger as TTC approaches 0
             const evasiveMultiplier = Math.min(50, 5 / Math.max(0.1, timeToCollision));
             steer = steer.add(diff.mult(closingSpeed * evasiveMultiplier));
           }
@@ -237,10 +199,6 @@ export class InternalAgent {
     if (count > 0) {
       steer = steer.div(count);
     }
-    
-    // Do NOT normalize here, otherwise we lose the inverse square law magnitude!
-    // We want the force to be stronger when they are closer.
-    // Just limit it to a reasonable maximum so it doesn't break physics.
     if (steer.magSq() > 0) {
       steer = steer.limit(maxSpeed * 4); // Increased limit so it can overpower target attraction
     }
@@ -291,15 +249,12 @@ export class InternalAgent {
 
   private computeObstacleAvoidance(state: DroneState, environment: Environment, maxSpeed: number, pMult: number = 1.0): Vector2 {
     let steer = new Vector2(0, 0);
-    
-    // Avoid obstacles
     for (const obs of environment.obstacles) {
       let closestPoint = new Vector2(0, 0);
       let avoidRadius = 0;
 
       if (obs.type === 'circle' || obs.type === 'electrical_storm' || obs.type === 'magnetic_field') {
         closestPoint = obs.position;
-        // Increase buffer significantly for hazards to avoid their effects
         const buffer = (obs.type === 'electrical_storm' || obs.type === 'magnetic_field') ? 80 : 40;
         avoidRadius = (obs.radius + state.radius + buffer) * pMult;
       } else if (obs.type === 'rect') {
@@ -315,14 +270,11 @@ export class InternalAgent {
       if (d > 0 && d < avoidRadius) {
         let diff = state.position.sub(closestPoint);
         diff = diff.normalize();
-        // Stronger repulsion from obstacles
         const force = Math.min(100, 1000 / (d * d));
         diff = diff.mult(force);
         steer = steer.add(diff);
       }
     }
-
-    // Removed wall avoidance to allow infinite space
 
     if (steer.magSq() > 0) {
       steer = steer.limit(maxSpeed * 2);
@@ -350,7 +302,6 @@ export class InternalAgent {
     let d = desired.mag();
     if (d > 0) {
         desired = desired.normalize();
-        // Slow down within 100 pixels
         if (d < 100) {
             desired = desired.mult(maxSpeed * (d / 100));
         } else {

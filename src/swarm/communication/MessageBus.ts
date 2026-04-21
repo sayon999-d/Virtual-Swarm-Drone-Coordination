@@ -23,8 +23,6 @@ export class MessageBus {
   getNeighbors(droneId: string, radius: number): DroneState[] {
     const state = this.states.get(droneId);
     if (!state) return [];
-    
-    // Get all neighbors in radius, excluding self
     return this.grid.getNeighbors(state.position, radius).filter(d => d.id !== droneId);
   }
 }

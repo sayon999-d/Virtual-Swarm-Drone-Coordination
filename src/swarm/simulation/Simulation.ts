@@ -37,16 +37,12 @@ export class Simulation {
   collisionEvents: CollisionEvent[] = [];
   collisionLog: CollisionEvent[] = [];
   isRunning: boolean = true;
-  
-  // New controls
   timeScale: number = 1.0;
   showTrails: boolean = true;
   trailStyle: TrailStyle = 'Fading';
   showFormationPoints: boolean = false;
   formationSpacing: number = 40;
   currentDynamicSpacing: number = 40;
-  
-  // Auto Pilot System
   autoPilotWaypoints: Vector2[] = [];
   autoPilotIndex: number = 0;
 
@@ -56,8 +52,6 @@ export class Simulation {
     this.bus = new MessageBus(50);
     this.drones = [];
     this.target = null;
-    
-    // Default patrol route
     this.autoPilotWaypoints = [
       new Vector2(width * 0.2, height * 0.2),
       new Vector2(width * 0.8, height * 0.2),
@@ -70,8 +64,6 @@ export class Simulation {
       const y = height / 2 + (Math.random() * 100 - 50);
       this.drones.push(new Drone(`drone-${i}`, x, y));
     }
-    
-    // Apply default formation
     this.setFormation(this.formation);
   }
 
@@ -84,7 +76,6 @@ export class Simulation {
   }
 
   recenter() {
-    // Snap virtual center and target to actual drone centroid
     let centroid = new Vector2(0, 0);
     if (this.drones.length > 0) {
       for (const drone of this.drones) {
@@ -95,41 +86,25 @@ export class Simulation {
     
     this.virtualCenter = centroid;
     this.target = centroid;
-    
-    // Briefly boost target weight to pull them back faster
     const originalTargetWeight = this.config.targetWeight;
     this.config.targetWeight = Math.max(8.0, originalTargetWeight * 2);
-    
-    // Restore slowly in the background or just let the user's next config adjustment take over.
-    // For now, we'll just set it to a strong standard value for consolidation.
     if (this.formation === 'Scatter' || this.formation === 'Flock') {
-      // Re-enable target seeking if specifically requested to recenter
       this.config.targetWeight = 4.0;
     }
   }
 
   setFormation(f: Formation | 'Hexagon') {
     this.formation = f as Formation;
-    
-    // Dynamic Spacing Adjustment
-    // For dense formations, slightly increase spacing to prevent overlaps
-    // For sparse formations, allow for tighter packing
     const count = this.drones.length;
     let spacing = this.formationSpacing;
     
     if (count > 25) {
-      // Scale up spacing slightly as count increases
-      // 2% increase for every 10 drones above 25
       const overflow = count - 25;
       spacing *= (1 + (overflow * 0.002));
     } else if (count < 15) {
-      // Scale down spacing slightly for small groups
-      // 2% decrease for every drone below 15
       const underflow = 15 - count;
       spacing *= (1 - (underflow * 0.02));
     }
-    
-    // Floor at 35 to prevent physical overlap (drone radius is 16)
     spacing = Math.max(35, spacing);
     this.currentDynamicSpacing = spacing;
     
@@ -147,7 +122,6 @@ export class Simulation {
       this.config.targetWeight = 0.0; // Disable target seeking for pure flocking
       this.drones.forEach(d => d.targetOffset = new Vector2(0, 0));
     } else {
-      // Structured formations
       this.config = { ...defaultConfig };
       this.config.targetWeight = 4.0; // Slightly stronger pull for formations
       this.config.separationWeight = 2.0; // Reduced to let them settle into slots
@@ -157,8 +131,6 @@ export class Simulation {
       this.config.maxSpeed = 4.5; 
       
       this.config.separationRadius = 38; // Slightly larger than drone diameter (32)
-
-      // 1. Generate all required slots for the formation first
       const slots: Vector2[] = [];
       const count = this.drones.length;
 
@@ -188,7 +160,6 @@ export class Simulation {
           slots.push(new Vector2(0, i * spacing));
         }
       } else if (f === 'Cross') {
-        // Cross / X shape
         const armCount = Math.floor(count / 4);
         slots.push(new Vector2(0, 0)); // Center
         for (let i = 1; i < count; i++) {
@@ -200,7 +171,6 @@ export class Simulation {
           if (arm === 3) slots.push(new Vector2(-step * spacing, -step * spacing));
         }
       } else if ((f as string) === 'Hexagon') {
-        // Hexagonal packing is more natural and order-stable
         let i = 0;
         let layer = 0;
         while (i < count) {
@@ -221,31 +191,19 @@ export class Simulation {
           layer++;
         }
       }
-
-      // 2. Center the slots
       let slotCentroid = new Vector2(0, 0);
       slots.forEach(s => slotCentroid = slotCentroid.add(s));
       slotCentroid = slotCentroid.div(slots.length || 1);
       const centeredSlots = slots.map(s => s.sub(slotCentroid));
-
-      // 3. Assign drones TO slots greedily (Nearest Neighbor)
-      // This is much more stable than sorting by coordinates
       const availableDrones = [...this.drones];
       const assignedSlots: { drone: Drone, slot: Vector2 }[] = [];
-
-      // Sort slots by distance from the center to fill inside-out
       const sortedSlots = [...centeredSlots].sort((a, b) => a.magSq() - b.magSq());
-
-      // Find virtual center (current centroid) to match relative positions
       let currentCentroid = new Vector2(0, 0);
       this.drones.forEach(d => currentCentroid = currentCentroid.add(d.position));
       currentCentroid = currentCentroid.div(this.drones.length || 1);
 
       for (const slot of sortedSlots) {
         if (availableDrones.length === 0) break;
-
-        // Find the drone that is currently closest to where this slot would be in world space
-        // Slot is relative to centroid, so slotPosition = currentCentroid + slot
         const worldSlotPos = currentCentroid.add(slot);
         
         let bestDroneIdx = 0;
@@ -373,8 +331,6 @@ export class Simulation {
         return drone;
       });
     }
-    
-    // Clear dynamic states
     this.activeCollisions.clear();
     this.collisionEvents = [];
     this.collisionLog = [];
@@ -393,8 +349,6 @@ export class Simulation {
     this.currentCollisions = 0;
     
     const scaledDt = dt * this.timeScale;
-
-    // 1. Update spatial grid
     this.bus.clear();
     for (const drone of this.drones) {
       drone.isColliding = false; // Reset collision state
@@ -405,8 +359,6 @@ export class Simulation {
 
     const perceptionRadius = Math.max(this.config.separationRadius, this.config.alignmentRadius, this.config.cohesionRadius);
     const newActiveCollisions = new Set<string>();
-
-    // Calculate swarm centroid to use as formation center if no explicit target
     let currentCentroid = new Vector2(0, 0);
     let currentVelocity = new Vector2(0, 0);
     if (this.drones.length > 0) {
@@ -416,13 +368,9 @@ export class Simulation {
       }
       currentCentroid = currentCentroid.div(this.drones.length);
       currentVelocity = currentVelocity.div(this.drones.length);
-
-      // Auto Pilot Mission Logic
       if (this.config.autoPilot && this.autoPilotWaypoints.length > 0) {
         const currentWaypoint = this.autoPilotWaypoints[this.autoPilotIndex];
         this.target = currentWaypoint;
-        
-        // Advance to next waypoint if reached (with generous arrival radius)
         if (currentCentroid.distance(currentWaypoint) < 60) {
           this.autoPilotIndex = (this.autoPilotIndex + 1) % this.autoPilotWaypoints.length;
         }
@@ -432,15 +380,11 @@ export class Simulation {
     if (!this.virtualCenter) {
       this.virtualCenter = currentCentroid;
     } else {
-      // Move virtual center by average velocity, and slowly pull it towards the actual centroid.
-      // This makes the formation robust against sudden disturbances (like a drone getting stuck).
       this.virtualCenter = this.virtualCenter.add(currentVelocity.mult(scaledDt));
       this.virtualCenter = this.virtualCenter.lerp(currentCentroid, 0.05);
     }
 
     const activeTarget = this.target || this.virtualCenter;
-
-    // Sweep and Prune for initial collision / near-collision detection
     const sortedDrones = [...this.drones].sort((a, b) => a.position.x - b.position.x);
     const dangerThresholdMul = 2.5; // Radius multiplier for "alert" zone
     
@@ -448,12 +392,8 @@ export class Simulation {
       const d1 = sortedDrones[i];
       for (let j = i + 1; j < sortedDrones.length; j++) {
         const d2 = sortedDrones[j];
-        
-        // Horizontal distance check with danger threshold
         const horizontalDangerDist = (d1.radius + d2.radius) * dangerThresholdMul;
         if (d2.position.x - d1.position.x > horizontalDangerDist) break;
-        
-        // Vertical distance check
         if (Math.abs(d2.position.y - d1.position.y) <= horizontalDangerDist) {
           const distSq = d1.position.distanceSq(d2.position);
           const contactDist = d1.radius + d2.radius;
@@ -462,8 +402,6 @@ export class Simulation {
           if (distSq < dangerDist * dangerDist) {
             d1.isNearCollision = true;
             d2.isNearCollision = true;
-            
-            // Hard collision detection
             if (distSq < contactDist * contactDist) {
               this.currentCollisions++;
               const id1 = d1.id < d2.id ? d1.id : d2.id;
@@ -478,8 +416,6 @@ export class Simulation {
         }
       }
     }
-
-    // 2. For each drone:
     for (const drone of this.drones) {
       const state = drone.getState();
       const neighbors = this.bus.getNeighbors(drone.id, perceptionRadius);
@@ -489,33 +425,21 @@ export class Simulation {
     }
     
     this.activeCollisions = newActiveCollisions;
-
-    // 3. Update physics and analyze stability
     for (const drone of this.drones) {
-      // Analyze formation stability: Check deviation from target position
       if (activeTarget && drone.targetOffset) {
         const desiredPos = activeTarget.add(drone.targetOffset);
         const deviation = drone.position.distance(desiredPos);
-        
-        // If deviation is high, drones are struggling to stay in formation
         if (deviation > this.currentDynamicSpacing * 1.5) {
-          // Increase local weights for stability
           drone.localTargetMult = Math.min(3.0, drone.localTargetMult + 0.1 * scaledDt);
           drone.localCohesionMult = Math.min(2.5, drone.localCohesionMult + 0.05 * scaledDt);
         }
       }
-
-      // Analyze collision density for stability
       if (drone.isColliding || drone.isNearCollision) {
-        // Boost separation immediately to resolve tight packing
         drone.localSeparationMult = Math.min(4.0, drone.localSeparationMult + 0.2 * scaledDt);
       }
 
       drone.update(this.config, scaledDt);
     }
-
-    // 4. Resolve hard collisions to prevent overlap and keep collision count low
-    // Sweep and Prune for collision resolution
     const sortedDronesForResolution = [...this.drones].sort((a, b) => a.position.x - b.position.x);
     for (let i = 0; i < sortedDronesForResolution.length; i++) {
       const d1 = sortedDronesForResolution[i];
@@ -533,19 +457,13 @@ export class Simulation {
             
             const dist = Math.sqrt(distSq);
             const overlap = minDist - dist;
-            
-            // Push drones apart positionally
             const pushDir = d1.position.sub(d2.position).normalize();
             const pushVec = pushDir.mult(overlap * 0.5);
             
             d1.position = d1.position.add(pushVec);
             d2.position = d2.position.sub(pushVec);
-
-            // Adjust velocities to prevent sticking/jittering
             const relativeVelocity = d1.velocity.sub(d2.velocity);
             const velocityAlongNormal = relativeVelocity.dot(pushDir);
-            
-            // Only adjust if they are moving towards each other
             if (velocityAlongNormal < 0) {
               const restitution = 0.2; // Slight bounce
               const impulseMag = -(1 + restitution) * velocityAlongNormal * 0.5;
@@ -553,16 +471,12 @@ export class Simulation {
               
               d1.velocity = d1.velocity.add(impulse);
               d2.velocity = d2.velocity.sub(impulse);
-              
-              // Determine if any drone is in a special state
               let type: CollisionEvent['type'] = 'STANDARD';
               if (d1.health < 50 || d2.health < 50) {
                 type = 'DISTRESS';
               } else if (d1.energy < 30 || d2.energy < 30) {
                 type = 'LOW_ENERGY';
               }
-
-              // Record collision event for visual effect
               const collisionPoint = d1.position.add(d2.position).mult(0.5);
               const event: CollisionEvent = { 
                 position: collisionPoint, 
@@ -582,8 +496,6 @@ export class Simulation {
         }
       }
     }
-
-    // Drone-to-Obstacle collisions
     for (const d1 of this.drones) {
       for (const obs of this.environment.obstacles) {
         if (obs.type === 'circle' || obs.type === 'electrical_storm' || obs.type === 'magnetic_field') {
@@ -697,8 +609,6 @@ export class Simulation {
         }
       }
     }
-    
-    // Cleanup old collision events (older than 500ms)
     const now = Date.now();
     this.collisionEvents = this.collisionEvents.filter(e => now - e.time < 500);
   }

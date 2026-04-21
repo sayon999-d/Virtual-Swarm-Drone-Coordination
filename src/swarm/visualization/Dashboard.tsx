@@ -24,8 +24,6 @@ export const Dashboard: React.FC = () => {
     }
     return sim;
   }, [width, height, numDrones, loadedState]);
-
-  // Force re-render when config changes
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -59,7 +57,6 @@ export const Dashboard: React.FC = () => {
         return;
       }
       const data = JSON.parse(saved);
-      // We set the state which triggers useMemo to recreate sim with the imported data
       setLoadedState(data);
       if (data.drones) {
         setNumDrones(data.drones.length);
@@ -70,8 +67,6 @@ export const Dashboard: React.FC = () => {
       toast.error('Failed to load state');
     }
   };
-
-  // Calculate stats
   const avgSpeed = simulation.drones.reduce((sum, d) => sum + d.velocity.mag(), 0) / (simulation.drones.length || 1);
   const cohesionPct = 79; // Mock for now
 

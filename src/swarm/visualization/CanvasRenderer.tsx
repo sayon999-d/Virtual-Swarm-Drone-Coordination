@@ -20,8 +20,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 });
   const isPanningRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
-
-  // Pre-render drone to offscreen canvas for optimization
   const droneCanvasesRef = useRef<Record<string, HTMLCanvasElement>>({});
 
   useEffect(() => {
@@ -41,8 +39,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         ctx.translate(32, 32); 
 
         const armLen = 12;
-
-        // 1. Draw 3D Drop Shadow
         ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
         ctx.shadowBlur = 8;
         ctx.shadowOffsetX = 6;
@@ -66,15 +62,11 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         ctx.shadowBlur = 0;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
-
-        // 2. Arms
         ctx.lineWidth = 2.5;
         ctx.strokeStyle = '#111827'; 
         ctx.lineCap = 'square';
         ctx.beginPath(); ctx.moveTo(-armLen, -armLen); ctx.lineTo(armLen, armLen); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(-armLen, armLen); ctx.lineTo(armLen, -armLen); ctx.stroke();
-        
-        // 3. Motors
         const drawMotor = (x: number, y: number) => {
           ctx.fillStyle = '#1f2937';
           ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
@@ -91,8 +83,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         drawMotor(armLen, -armLen);
         drawMotor(-armLen, armLen);
         drawMotor(armLen, armLen);
-
-        // 4. Rotors
         const drawRotor = (x: number, y: number) => {
           ctx.save();
           ctx.translate(x, y);
@@ -113,12 +103,8 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         drawRotor(armLen, armLen);   
         drawRotor(-armLen, -armLen); 
         drawRotor(-armLen, armLen);  
-
-        // 5. Body
         ctx.fillStyle = '#0f172a'; 
         ctx.beginPath(); ctx.roundRect(-7, -4.5, 14, 9, 2); ctx.fill();
-        
-        // Chassis Accent Stripe (New)
         ctx.fillStyle = colors.ledFront;
         ctx.globalAlpha = 0.6;
         ctx.fillRect(-7, -1, 3, 2); // Small decal at the back
@@ -131,21 +117,15 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         ctx.beginPath(); ctx.roundRect(-5, -3.5, 10, 7, 1); ctx.fill();
         ctx.fillStyle = '#000000';
         ctx.fillRect(-1.5, -3.5, 3, 7);
-
-        // 6. Camera
         ctx.fillStyle = '#000000';
         ctx.beginPath(); ctx.roundRect(6, -2, 3, 4, 1); ctx.fill();
         ctx.fillStyle = '#1e293b'; 
         ctx.beginPath(); ctx.arc(8.5, 0, 1.2, 0, Math.PI * 2); ctx.fill();
-
-        // 7. Profile Specific LED styling
-        // Front LEDs
         ctx.fillStyle = colors.ledFront;
         ctx.shadowBlur = 4;
         ctx.shadowColor = colors.ledFront;
         ctx.beginPath(); ctx.arc(armLen - 2, armLen - 2, 1.2, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.arc(armLen - 2, -armLen + 2, 1.2, 0, Math.PI * 2); ctx.fill();
-        // Back LEDs
         ctx.fillStyle = colors.ledBack;
         ctx.shadowColor = colors.ledBack;
         ctx.beginPath(); ctx.arc(-armLen + 2, armLen - 2, 1.0, 0, Math.PI * 2); ctx.fill();
@@ -167,15 +147,11 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       simulation.step();
 
       const { x: cx, y: cy, zoom } = cameraRef.current;
-
-      // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(zoom, zoom);
-
-      // Draw grid (infinite feeling)
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
       ctx.lineWidth = 1 / zoom;
       const gridSize = 40;
@@ -195,15 +171,12 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         ctx.lineTo(endX, y);
       }
       ctx.stroke();
-
-      // Draw obstacles (3D Forcefield Pillars)
       simulation.environment.obstacles.forEach((obs, index) => {
         const isHovered = hoveredObstacleIndexRef.current === index;
         ctx.save();
         ctx.translate(obs.position.x, obs.position.y);
         
         if (obs.type === 'circle') {
-          // Base glow
           const glowMultiplier = isHovered ? 1.5 : 1;
           const baseGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, obs.radius);
           baseGrad.addColorStop(0, `rgba(239, 68, 68, ${0.4 * glowMultiplier})`);
@@ -212,8 +185,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.beginPath();
           ctx.arc(0, 0, obs.radius, 0, Math.PI * 2);
           ctx.fill();
-
-          // Inner core
           ctx.fillStyle = isHovered ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)';
           ctx.strokeStyle = `rgba(239, 68, 68, ${isHovered ? 1.0 : 0.8})`;
           ctx.lineWidth = (isHovered ? 3 : 2) / zoom;
@@ -221,8 +192,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.arc(0, 0, obs.radius * 0.8, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
-          
-          // Hexagon pattern or inner rings for tech feel
           ctx.strokeStyle = `rgba(239, 68, 68, ${isHovered ? 0.5 : 0.3})`;
           ctx.lineWidth = 1 / zoom;
           ctx.beginPath();
@@ -233,12 +202,8 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           const h = obs.height || 50;
           const hw = w / 2;
           const hh = h / 2;
-          
-          // Base glow
           ctx.fillStyle = isHovered ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.2)';
           ctx.fillRect(-hw - 10, -hh - 10, w + 20, h + 20);
-
-          // Inner core
           ctx.fillStyle = isHovered ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)';
           ctx.strokeStyle = `rgba(239, 68, 68, ${isHovered ? 1.0 : 0.8})`;
           ctx.lineWidth = (isHovered ? 3 : 2) / zoom;
@@ -250,16 +215,12 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
             ctx.lineWidth = 1 / zoom;
             ctx.strokeRect(-hw - 4, -hh - 4, w + 8, h + 8);
           }
-
-          // Inner detail
           ctx.strokeStyle = `rgba(239, 68, 68, ${isHovered ? 0.5 : 0.3})`;
           ctx.lineWidth = 1 / zoom;
           ctx.strokeRect(-hw + 5, -hh + 5, w - 10, h - 10);
         } else if (obs.type === 'electrical_storm') {
           const radius = obs.radius || 60;
           const glowMultiplier = isHovered ? 1.3 : 1.0;
-          
-          // Base storm cloud glow
           const baseGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
           baseGrad.addColorStop(0, `rgba(147, 51, 234, ${0.5 * glowMultiplier})`); // Purple
           baseGrad.addColorStop(1, 'rgba(147, 51, 234, 0)');
@@ -267,8 +228,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.beginPath();
           ctx.arc(0, 0, radius * glowMultiplier, 0, Math.PI * 2);
           ctx.fill();
-
-          // Outer highlight when hovered
           if (isHovered) {
             ctx.strokeStyle = 'rgba(168, 85, 247, 0.3)';
             ctx.lineWidth = 2 / zoom;
@@ -276,8 +235,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
             ctx.arc(0, 0, radius + 5, 0, Math.PI * 2);
             ctx.stroke();
           }
-
-          // Lightning flashes
           const flashProb = isHovered ? 0.8 : 0.9; // More flashes when hovered
           const flash = Math.random() > flashProb ? 0.8 : 0.2;
           ctx.strokeStyle = `rgba(216, 180, 254, ${flash})`;
@@ -296,8 +253,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           const time = Date.now() / 500;
           const radius = obs.radius || 80;
           const glowMultiplier = isHovered ? 1.3 : 1.0;
-          
-          // Magnetic field glow
           const baseGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * glowMultiplier);
           baseGrad.addColorStop(0, `rgba(14, 165, 233, ${0.3 * glowMultiplier})`); // Cyan
           baseGrad.addColorStop(1, 'rgba(14, 165, 233, 0)');
@@ -305,8 +260,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.beginPath();
           ctx.arc(0, 0, radius * glowMultiplier, 0, Math.PI * 2);
           ctx.fill();
-
-          // Concentric pulsing rings
           const ringColor = isHovered ? 'rgba(56, 189, 248, 0.9)' : 'rgba(56, 189, 248, 0.6)';
           ctx.strokeStyle = ringColor;
           ctx.lineWidth = (isHovered ? 2.5 : 1.5) / zoom;
@@ -320,8 +273,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
 
         ctx.restore();
       });
-
-      // Draw AutoPilot Path (if enabled)
       if (simulation.config.autoPilot && simulation.autoPilotWaypoints.length > 0) {
         ctx.save();
         ctx.setLineDash([5, 5]);
@@ -335,15 +286,11 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         });
         ctx.closePath();
         ctx.stroke();
-        
-        // Draw waypoints
         simulation.autoPilotWaypoints.forEach((wp, index) => {
           const isActive = index === simulation.autoPilotIndex;
           
           ctx.save();
           ctx.translate(wp.x, wp.y);
-          
-          // Outer ring
           ctx.beginPath();
           ctx.arc(0, 0, 8 / zoom, 0, Math.PI * 2);
           ctx.strokeStyle = isActive ? 'rgba(245, 158, 11, 1.0)' : 'rgba(245, 158, 11, 0.2)';
@@ -351,14 +298,11 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.stroke();
           
           if (isActive) {
-            // Pulse effect for active waypoint
             const pulse = Math.sin(Date.now() / 200) * 0.5 + 0.5;
             ctx.beginPath();
             ctx.arc(0, 0, (4 + pulse * 2) / zoom, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(245, 158, 11, 0.8)';
             ctx.fill();
-            
-            // Label
             ctx.fillStyle = 'rgba(245, 158, 11, 1)';
             ctx.font = `bold ${12 / zoom}px monospace`;
             ctx.textAlign = 'center';
@@ -370,10 +314,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         
         ctx.restore();
       }
-
-      // Draw formation points
       if (simulation.showFormationPoints && simulation.formation !== 'Scatter' && simulation.formation !== 'Flock') {
-        // Calculate swarm centroid to find the active target
         let swarmCenter = new Vector2(0, 0);
         if (simulation.drones.length > 0) {
           for (const drone of simulation.drones) {
@@ -386,12 +327,9 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         for (const drone of simulation.drones) {
           if (drone.targetOffset) {
             const targetPos = activeTarget.add(drone.targetOffset);
-            
-            // Draw a faint line connecting the drone to its target point (The "Formation Tether")
             const isDisrupted = drone.isColliding;
             
             if (isDisrupted) {
-              // Glitchy distorted tether during collision
               ctx.strokeStyle = 'rgba(239, 68, 68, 0.6)'; // Red alert
               ctx.lineWidth = (2 + Math.random() * 2) / zoom;
               
@@ -400,14 +338,12 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
               
               ctx.beginPath();
               ctx.moveTo(drone.position.x, drone.position.y);
-              // Multi-segment glitch line
               const midX = (drone.position.x + targetPos.x) / 2 + jitterX;
               const midY = (drone.position.y + targetPos.y) / 2 + jitterY;
               ctx.lineTo(midX, midY);
               ctx.lineTo(targetPos.x, targetPos.y);
               ctx.stroke();
             } else {
-              // Smooth stable tether
               ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
               ctx.lineWidth = 1 / zoom;
               ctx.beginPath();
@@ -415,19 +351,14 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
               ctx.lineTo(targetPos.x, targetPos.y);
               ctx.stroke();
             }
-
-            // Stability check: Is the assigned drone colliding, or is there a collision nearby?
             const isAssignedDroneDisrupted = drone.isColliding;
             const nearbyCollision = simulation.collisionEvents.find(e => e.position.distanceSq(targetPos) < 2500); // 50px radius
             const isPointUnstable = isAssignedDroneDisrupted || !!nearbyCollision;
             
             if (isPointUnstable) {
-              // Unstable target point with high-frequency tremor and red pulse outline
               const intensity = isAssignedDroneDisrupted ? 1.0 : 0.5;
               const tremorX = (Math.random() - 0.5) * (4 * intensity) / zoom;
               const tremorY = (Math.random() - 0.5) * (4 * intensity) / zoom;
-              
-              // Pulsing logic using simulation tick
               const pulse = 0.5 + Math.sin(simulation.tick * 0.2) * 0.5;
               
               ctx.fillStyle = isAssignedDroneDisrupted ? 'rgba(239, 68, 68, 0.9)' : 'rgba(245, 158, 11, 0.8)'; // Orange if nearby, Red if assigned
@@ -438,14 +369,11 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
               ctx.arc(targetPos.x + tremorX, targetPos.y + tremorY, 4.5 / zoom, 0, Math.PI * 2);
               ctx.fill();
               ctx.stroke();
-              
-              // Draw a faint "interference" ring
               ctx.strokeStyle = `rgba(239, 68, 68, ${0.2 * pulse})`;
               ctx.beginPath();
               ctx.arc(targetPos.x, targetPos.y, (8 + pulse * 4) / zoom, 0, Math.PI * 2);
               ctx.stroke();
             } else {
-              // Stable target point
               ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
               ctx.beginPath();
               ctx.arc(targetPos.x, targetPos.y, 3 / zoom, 0, Math.PI * 2);
@@ -454,8 +382,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           }
         }
       }
-
-      // Draw trails
       if (simulation.showTrails) {
         ctx.save();
         const style = simulation.trailStyle || 'Solid';
@@ -464,7 +390,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           if (drone.history.length < 2) continue;
           
           if (style === 'Fading') {
-            // Draw individual segments with decreasing opacity and width
             for (let i = 1; i < drone.history.length; i++) {
               const p1 = drone.history[i-1];
               const p2 = drone.history[i];
@@ -489,7 +414,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
             }
             ctx.stroke();
           } else if (style === 'Neon') {
-            // Glowing neon effect
             ctx.shadowBlur = 10;
             ctx.shadowColor = 'rgba(59, 130, 246, 0.8)';
             ctx.strokeStyle = 'rgba(147, 197, 253, 0.6)';
@@ -501,7 +425,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
             }
             ctx.stroke();
           } else {
-            // Default Solid
             ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
             ctx.lineWidth = 1.5 / zoom;
             ctx.beginPath();
@@ -514,8 +437,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         }
         ctx.restore();
       }
-
-      // Draw collision shockwaves
       const now = Date.now();
       for (const event of simulation.collisionEvents) {
         const age = now - event.time;
@@ -524,24 +445,18 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           
           ctx.save();
           ctx.translate(event.position.x, event.position.y);
-          
-          // Expanding shockwave ring
           const radius = 10 + progress * 30;
           ctx.strokeStyle = `rgba(239, 68, 68, ${1 - progress})`; // Fading red
           ctx.lineWidth = 3 * (1 - progress);
           ctx.beginPath();
           ctx.arc(0, 0, radius, 0, Math.PI * 2);
           ctx.stroke();
-          
-          // Inner flash
           if (progress < 0.2) {
             ctx.fillStyle = `rgba(255, 255, 255, ${1 - progress * 5})`;
             ctx.beginPath();
             ctx.arc(0, 0, 15, 0, Math.PI * 2);
             ctx.fill();
           }
-          
-          // Particles
           let particleColor = 'rgba(250, 204, 21,'; // Default Yellow sparks
           if (event.type === 'DISTRESS') {
             particleColor = 'rgba(239, 68, 68,'; // Red
@@ -553,12 +468,9 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
 
           ctx.fillStyle = `${particleColor} ${1 - progress})`; 
           for (let i = 0; i < 8; i++) { // Slightly more particles
-            // Use seed for persistent but organic variation per particle
             const particleSeed = (event.seed * 1000 + i) * 1.5;
             const angleOffset = Math.sin(particleSeed) * 0.5;
             const angle = ((event.time + i) * 137.5) % (Math.PI * 2) + angleOffset;
-            
-            // Random initial velocity component
             const spreadSpeed = 0.5 + Math.abs(Math.sin(particleSeed * 0.789)) * 1.5;
             const dist = 5 + progress * 80 * spreadSpeed; 
             
@@ -573,42 +485,27 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.restore();
         }
       }
-
-      // Draw drones with 3D shadow effect
       for (const drone of simulation.drones) {
         ctx.save();
         ctx.translate(drone.position.x, drone.position.y);
         ctx.rotate(drone.rotation);
-        
-        // Apply 3D pitch and roll scaling
-        // Pitch scales the X axis (since drone faces +X)
-        // Roll scales the Y axis
         const scaleX = Math.cos(drone.pitch);
         const scaleY = Math.cos(drone.roll);
-        
-        // Scale up based on drone radius (base visual size was designed for radius ~12)
         const visualScale = drone.radius / 12;
         ctx.scale(scaleX * visualScale, scaleY * visualScale);
 
         const armLen = 12;
         const zoomScale = Math.max(0.5, zoom);
         const time = Date.now() / 1000;
-
-        // Draw drone using pre-rendered canvas based on profile
         const profileCanvas = droneCanvasesRef.current[drone.behaviorProfile];
         if (profileCanvas) {
           ctx.drawImage(profileCanvas, -32, -32);
         } else if (Object.values(droneCanvasesRef.current)[0]) {
-          // Fallback to first available canvas if profile not found
           ctx.drawImage(Object.values(droneCanvasesRef.current)[0], -32, -32);
         }
-
-        // Collision & Near-Collision Indicators
         if (drone.isColliding || drone.isNearCollision) {
           const isDanger = drone.isNearCollision && !drone.isColliding;
           const flash = Math.abs(Math.sin(Date.now() / (isDanger ? 150 : 100)));
-          
-          // Outer warning ring
           ctx.strokeStyle = isDanger 
             ? `rgba(245, 158, 11, ${0.3 + flash * 0.4})` // Amber for near-collision
             : `rgba(239, 68, 68, ${0.4 + flash * 0.6})`; // Red for actual collision
@@ -619,7 +516,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.stroke();
           
           if (isDanger) {
-            // Subtle "Warning" triangle icon for near-collision
             ctx.save();
             ctx.rotate(-drone.rotation); // Keep icon upright
             ctx.translate(0, -28);
@@ -632,23 +528,17 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
             ctx.lineTo(6, 4);
             ctx.closePath();
             ctx.fill();
-            
-            // Exclamation mark
             ctx.fillStyle = 'black';
             ctx.fillRect(-0.5, -2, 1, 3);
             ctx.fillRect(-0.5, 2, 1, 1);
             ctx.restore();
           } else {
-            // Add a subtle red tint over the drone during actual collision
             ctx.fillStyle = `rgba(239, 68, 68, ${0.1 + flash * 0.2})`;
             ctx.beginPath();
             ctx.arc(0, 0, 14, 0, Math.PI * 2);
             ctx.fill();
           }
-
-          // Hazard-specific distortion effects
           if (drone.lastCollisionObstacleType === 'electrical_storm') {
-            // Electrical storm crackle
             ctx.strokeStyle = `rgba(168, 85, 247, ${0.6 + Math.random() * 0.4})`; // Purple/Violet
             ctx.lineWidth = 1.5 / visualScale;
             for (let i = 0; i < 3; i++) {
@@ -664,7 +554,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
               ctx.stroke();
             }
           } else if (drone.lastCollisionObstacleType === 'magnetic_field') {
-            // Magnetic field swirl
             const swirlTime = Date.now() / 200;
             ctx.strokeStyle = 'rgba(14, 165, 233, 0.6)'; // Cyan
             ctx.lineWidth = 1 / visualScale;
@@ -676,11 +565,8 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
             }
           }
         }
-
-        // Message Indicator
         const state = drone.getState();
         if (state.messages && state.messages.length > 0) {
-          // Draw a pulsing ring to indicate broadcasting
           const pulse = (Date.now() % 1000) / 1000; // 0 to 1
           const radius = 16 + pulse * 20;
           
@@ -699,12 +585,8 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.arc(0, 0, radius, 0, Math.PI * 2);
           ctx.stroke();
         }
-
-        // 7. Draw Selection Highlight
         if (selectedDroneId === drone.id) {
           const selectPulse = (Math.sin(Date.now() / 300) + 1) / 2; // 0 to 1
-          
-          // Outer Glow
           ctx.beginPath();
           const gradient = ctx.createRadialGradient(0, 0, 10, 0, 0, 35);
           gradient.addColorStop(0, `rgba(234, 179, 8, ${0.1 + selectPulse * 0.2})`);
@@ -718,34 +600,24 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.beginPath();
           ctx.arc(0, 0, 24 + selectPulse * 2, 0, Math.PI * 2);
           ctx.stroke();
-          
-          // Crosshairs
           ctx.lineWidth = 1.5 / visualScale;
           ctx.beginPath(); ctx.moveTo(-28 - selectPulse * 4, 0); ctx.lineTo(-20, 0); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(28 + selectPulse * 4, 0); ctx.lineTo(20, 0); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(0, -28 - selectPulse * 4); ctx.lineTo(0, -20); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(0, 28 + selectPulse * 4); ctx.lineTo(0, 20); ctx.stroke();
         }
-
-        // 8. Draw ID and Stats (Always face up, so undo rotation)
         ctx.rotate(-drone.rotation);
         ctx.scale(1 / visualScale, 1 / visualScale); // undo visual scale
-        
-        // Draw ID
         ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
         ctx.font = '10px monospace';
         ctx.textAlign = 'center';
         ctx.fillText(drone.id, 0, -22);
-
-        // Draw Energy Bar
         const barW = 20;
         const barH = 3;
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(-barW/2, 20, barW, barH);
         ctx.fillStyle = drone.energy > 30 ? '#3b82f6' : '#ef4444'; // Blue or Red
         ctx.fillRect(-barW/2, 20, barW * (drone.energy / 100), barH);
-        
-        // Draw Health Bar
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
         ctx.fillRect(-barW/2, 24, barW, barH);
         ctx.fillStyle = drone.health > 30 ? '#22c55e' : '#ef4444'; // Green or Red
@@ -755,8 +627,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       }
 
       ctx.restore();
-
-      // Draw UI overlay for camera controls hint
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.font = '12px monospace';
       ctx.fillText(`ZOOM: ${zoom.toFixed(2)}x | PAN: Middle Click / Alt+Drag`, 20, canvas.height - 20);
@@ -828,8 +698,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       const worldX = (screenX - cx) / zoom;
       const worldY = (screenY - cy) / zoom;
       const clickPos = new Vector2(worldX, worldY);
-
-      // Check if we clicked an obstacle to drag
       if (!e.shiftKey) {
         let clickedObstacleIndex = -1;
         for (let i = simulation.environment.obstacles.length - 1; i >= 0; i--) {
@@ -856,8 +724,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           return;
         }
       }
-
-      // Check if we clicked a drone
       if (onSelectDrone) {
         let clickedDrone = null;
         for (const drone of simulation.drones) {
@@ -890,8 +756,6 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
     const worldX = (screenX - cx) / zoom;
     const worldY = (screenY - cy) / zoom;
     const worldPos = new Vector2(worldX, worldY);
-
-    // Update hovered obstacle
     let hoveredIdx = -1;
     for (let i = simulation.environment.obstacles.length - 1; i >= 0; i--) {
       const obs = simulation.environment.obstacles[i];
