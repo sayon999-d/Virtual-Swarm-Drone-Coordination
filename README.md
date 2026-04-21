@@ -20,18 +20,18 @@ That combination prevents the common blank-page / missing-assets failure where t
 
 ```mermaid
 flowchart TD
-    A[Developer pushes to main] --> B[GitHub Actions: deploy-pages.yml]
-    B --> C[actions/checkout@v4]
-    C --> D[actions/setup-node@v4<br/>Node 20 + npm cache]
-    D --> E[npm ci]
-    E --> F[npm run build]
-    F --> G[Vite build reads GITHUB_REPOSITORY]
-    G --> H[base set to /Virtual-Swarm-Drone-Coordination/ during CI]
-    H --> I[Static files emitted to dist/]
-    I --> J[actions/configure-pages@v5]
-    J --> K[actions/upload-pages-artifact@v3]
-    K --> L[actions/deploy-pages@v4]
-    L --> M[GitHub Pages site published]
+    A[Push changes to main] --> B[Run deploy pages workflow]
+    B --> C[Checkout repository]
+    C --> D[Setup Node 20 and npm cache]
+    D --> E[Install dependencies with npm ci]
+    E --> F[Build app with Vite]
+    F --> G[Read GitHub repository name]
+    G --> H[Set GitHub Pages base path]
+    H --> I[Write static files to dist]
+    I --> J[Configure Pages]
+    J --> K[Upload Pages artifact]
+    K --> L[Deploy artifact to GitHub Pages]
+    L --> M[Publish site]
 ```
 
 ### Pipeline Explanation
@@ -53,23 +53,23 @@ Expected Pages URL:
 flowchart LR
     UI[React Dashboard UI] --> SIM[Simulation Engine]
     UI --> CANVAS[CanvasRenderer]
-    UI --> STORE[Local Storage Save/Load]
+    UI --> STORE[Local storage save and load]
 
-    SIM --> DRONES[Drone Fleet]
-    SIM --> ENV[Environment + Obstacles]
+    SIM --> DRONES[Drone fleet]
+    SIM --> ENV[Environment and obstacles]
     SIM --> BUS[MessageBus]
     BUS --> GRID[SpatialGrid]
 
-    DRONES --> STATE[DroneState Snapshots]
+    DRONES --> STATE[Drone state snapshots]
     STATE --> BUS
 
     DRONES --> BRAIN[InternalAgent]
-    BRAIN --> RULES[Separation / Alignment / Cohesion]
-    BRAIN --> TARGETS[Formation Targeting + Auto Pilot]
-    BRAIN --> HAZARDS[Obstacle Avoidance + Hazard Response]
-    BRAIN --> COMMS[Distress / Low Energy / Hazard Messages]
+    BRAIN --> RULES[Separation alignment and cohesion]
+    BRAIN --> TARGETS[Formation targeting and autopilot]
+    BRAIN --> HAZARDS[Obstacle avoidance and hazard response]
+    BRAIN --> COMMS[Distress low energy and hazard messages]
 
-    SIM --> METRICS[Collision Tracking + Tick Metrics]
+    SIM --> METRICS[Collision tracking and tick metrics]
     CANVAS --> METRICS
     CANVAS --> DRONES
     CANVAS --> ENV
@@ -110,7 +110,7 @@ Each simulation tick follows this general sequence:
 ```mermaid
 flowchart TD
     A[Start Tick] --> B[Clear and rebuild MessageBus]
-    B --> C[Publish each DroneState into SpatialGrid]
+    B --> C[Publish each drone state into SpatialGrid]
     C --> D[Compute centroid and autopilot target]
     D --> E[Detect collisions and near-collisions]
     E --> F[For each drone: query neighbors]
