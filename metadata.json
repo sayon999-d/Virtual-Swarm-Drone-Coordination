@@ -1,0 +1,5 @@
+{
+  "name": "Virtual Swarm Drone Coordination System",
+  "description": "A decentralized, scalable swarm system with hierarchical multi-agent architecture and spatial partitioning.",
+  "requestFramePermissions": []
+}
