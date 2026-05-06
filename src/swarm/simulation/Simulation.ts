@@ -3,6 +3,8 @@ import { Environment } from '../environment/Environment';
 import { SwarmConfig, defaultConfig } from '../control/SwarmConfig';
 import { MessageBus } from '../communication/MessageBus';
 import { Vector2 } from '../utils/Vector2';
+import { LeaderAgent, LeaderComputeMode, LeaderDecision } from '../leader/LeaderAgent';
+import { DroneMessage } from '../spatial_index/SpatialGrid';
 
 export type Formation = 'Flock' | 'Grid' | 'V-Shape' | 'Circle' | 'Leader' | 'Scatter' | 'Hexagon' | 'Cross';
 export type Behavior = 'STD' | 'CALM' | 'AGGRO' | 'EXPLORE' | 'SWARM';
@@ -19,6 +21,18 @@ export interface CollisionEvent {
   obstacleType?: string;
   relativeVelocity?: number;
   impactForce?: number;
+}
+
+export interface CommunicationEvent {
+  id: string;
+  tick: number;
+  time: number;
+  from: string;
+  to: string;
+  type: string;
+  role: string;
+  summary: string;
+  value?: string | number;
 }
 
 export class Simulation {
@@ -41,15 +55,25 @@ export class Simulation {
   showTrails: boolean = true;
   trailStyle: TrailStyle = 'Fading';
   showFormationPoints: boolean = false;
-  formationSpacing: number = 40;
-  currentDynamicSpacing: number = 40;
+  formationSpacing: number = 88;
+  currentDynamicSpacing: number = 88;
   autoPilotWaypoints: Vector2[] = [];
   autoPilotIndex: number = 0;
+  leader: LeaderAgent;
+  leaderDroneId: string | null = null;
+  leaderEnabled: boolean = true;
+  leaderDecisionHistory: LeaderDecision[] = [];
+  communicationLog: CommunicationEvent[] = [];
+  groqRequestInFlight: boolean = false;
+  groqStatus: 'idle' | 'requesting' | 'online' | 'fallback' = 'idle';
+  groqLastError: string | null = null;
+  groqCooldownUntilTick: number = 0;
 
   constructor(width: number, height: number, numDrones: number) {
     this.environment = new Environment(width, height);
     this.config = { ...defaultConfig };
     this.bus = new MessageBus(50);
+    this.leader = new LeaderAgent();
     this.drones = [];
     this.target = null;
     this.autoPilotWaypoints = [
@@ -64,7 +88,37 @@ export class Simulation {
       const y = height / 2 + (Math.random() * 100 - 50);
       this.drones.push(new Drone(`drone-${i}`, x, y));
     }
+    this.assignLeader();
     this.setFormation(this.formation);
+  }
+
+  private assignLeader() {
+    if (this.drones.length === 0) {
+      this.leaderDroneId = null;
+      return;
+    }
+
+    this.drones.forEach((drone, index) => {
+      drone.isLeader = index === 0;
+      if (drone.isLeader) {
+        drone.setProfile('Relay');
+        drone.leaderCommand = 'HOLD_FORMATION';
+        this.leaderDroneId = drone.id;
+      } else {
+        drone.leaderCommand = null;
+      }
+    });
+  }
+
+  setLeaderMode(mode: LeaderComputeMode) {
+    this.leader.computeMode = mode;
+  }
+
+  toggleLeaderBrain(enabled: boolean) {
+    this.leaderEnabled = enabled;
+    if (!enabled) {
+      this.drones.forEach(d => d.leaderCommand = null);
+    }
   }
 
   setTarget(x: number, y: number) {
@@ -97,6 +151,7 @@ export class Simulation {
     this.formation = f as Formation;
     const count = this.drones.length;
     let spacing = this.formationSpacing;
+    const safeFormationSpacing = this.getSafeFormationSpacing();
     
     if (count > 25) {
       const overflow = count - 25;
@@ -105,7 +160,8 @@ export class Simulation {
       const underflow = 15 - count;
       spacing *= (1 - (underflow * 0.02));
     }
-    spacing = Math.max(35, spacing);
+    spacing = Math.max(safeFormationSpacing, spacing);
+    this.formationSpacing = Math.max(safeFormationSpacing, this.formationSpacing);
     this.currentDynamicSpacing = spacing;
     
     this.target = null; // Always clear explicit target when changing formation so it uses centroid
@@ -123,14 +179,16 @@ export class Simulation {
       this.drones.forEach(d => d.targetOffset = new Vector2(0, 0));
     } else {
       this.config = { ...defaultConfig };
-      this.config.targetWeight = 4.0; // Slightly stronger pull for formations
-      this.config.separationWeight = 2.0; // Reduced to let them settle into slots
-      this.config.alignmentWeight = 1.0; 
-      this.config.cohesionWeight = 0.5; 
-      this.config.maxForce = 0.8; // Snappier response
-      this.config.maxSpeed = 4.5; 
+      this.config.targetWeight = 3.2;
+      this.config.separationWeight = 5.0;
+      this.config.alignmentWeight = 0.8; 
+      this.config.cohesionWeight = 0.25; 
+      this.config.wanderWeight = 0.0;
+      this.config.maxForce = 0.55;
+      this.config.maxSpeed = 3.4;
+      this.config.damping = 0.04;
       
-      this.config.separationRadius = 38; // Slightly larger than drone diameter (32)
+      this.config.separationRadius = Math.max(spacing * 0.9, safeFormationSpacing);
       const slots: Vector2[] = [];
       const count = this.drones.length;
 
@@ -220,8 +278,16 @@ export class Simulation {
 
         const [chosenDrone] = availableDrones.splice(bestDroneIdx, 1);
         chosenDrone.targetOffset = slot;
+        chosenDrone.velocity = chosenDrone.velocity.mult(0.35);
+        chosenDrone.localSeparationMult = Math.max(chosenDrone.localSeparationMult, 2.2);
+        chosenDrone.localTargetMult = Math.max(chosenDrone.localTargetMult, 1.4);
       }
     }
+  }
+
+  private getSafeFormationSpacing() {
+    const maxRadius = this.drones.reduce((radius, drone) => Math.max(radius, drone.radius), 16);
+    return Math.ceil(maxRadius * 5.5);
   }
 
   setBehavior(b: Behavior) {
@@ -269,6 +335,9 @@ export class Simulation {
       config: { ...this.config },
       autoPilotWaypoints: this.autoPilotWaypoints.map(wp => ({ x: wp.x, y: wp.y })),
       autoPilotIndex: this.autoPilotIndex,
+      leaderEnabled: this.leaderEnabled,
+      leaderMode: this.leader.computeMode,
+      leaderDecision: this.leader.lastDecision,
       environment: {
         obstacles: this.environment.obstacles.map(o => ({
           ...o,
@@ -282,6 +351,8 @@ export class Simulation {
         energy: d.energy,
         health: d.health,
         behaviorProfile: d.behaviorProfile,
+        isLeader: d.isLeader,
+        leaderCommand: d.leaderCommand,
         targetOffset: { x: d.targetOffset.x, y: d.targetOffset.y }
       }))
     };
@@ -293,11 +364,15 @@ export class Simulation {
     this.tick = data.tick || 0;
     this.formation = data.formation || 'Scatter';
     this.behavior = data.behavior || 'STD';
-    this.formationSpacing = data.formationSpacing || 40;
+    this.formationSpacing = Math.max(data.formationSpacing || 88, this.getSafeFormationSpacing());
     this.timeScale = data.timeScale || 1.0;
     this.showTrails = data.showTrails !== undefined ? data.showTrails : true;
     this.trailStyle = data.trailStyle || 'Fading';
     this.showFormationPoints = !!data.showFormationPoints;
+    this.leaderEnabled = data.leaderEnabled !== undefined ? data.leaderEnabled : true;
+    if (data.leaderMode) {
+      this.leader.computeMode = data.leaderMode;
+    }
     
     if (data.config) {
       this.config = { ...data.config };
@@ -327,13 +402,17 @@ export class Simulation {
         if (d.behaviorProfile) {
           drone.setProfile(d.behaviorProfile);
         }
+        drone.isLeader = !!d.isLeader;
+        drone.leaderCommand = d.leaderCommand || null;
         drone.targetOffset = new Vector2(d.targetOffset.x, d.targetOffset.y);
         return drone;
       });
     }
+    this.assignLeader();
     this.activeCollisions.clear();
     this.collisionEvents = [];
     this.collisionLog = [];
+    this.communicationLog = [];
   }
 
   private addToLog(event: CollisionEvent) {
@@ -385,6 +464,20 @@ export class Simulation {
     }
 
     const activeTarget = this.target || this.virtualCenter;
+    if (this.leaderEnabled && this.leaderDroneId) {
+      for (const drone of this.drones) {
+        if (!drone.isLeader) {
+          const state = drone.getState();
+          for (const message of state.messages) {
+            this.recordCommunication(drone.id, drone.behaviorProfile, message);
+          }
+          this.recordRoutineTelemetry(drone, activeTarget);
+        }
+      }
+    }
+    if (this.leaderEnabled && this.leader.shouldPlan(this.tick)) {
+      this.planLeaderDecision(activeTarget, currentCentroid);
+    }
     const sortedDrones = [...this.drones].sort((a, b) => a.position.x - b.position.x);
     const dangerThresholdMul = 2.5; // Radius multiplier for "alert" zone
     
@@ -439,6 +532,9 @@ export class Simulation {
       }
 
       drone.update(this.config, scaledDt);
+    }
+    if (this.formation !== 'Scatter' && this.formation !== 'Flock') {
+      this.resolveDroneOverlaps(3);
     }
     const sortedDronesForResolution = [...this.drones].sort((a, b) => a.position.x - b.position.x);
     for (let i = 0; i < sortedDronesForResolution.length; i++) {
@@ -611,5 +707,193 @@ export class Simulation {
     }
     const now = Date.now();
     this.collisionEvents = this.collisionEvents.filter(e => now - e.time < 500);
+  }
+
+  private resolveDroneOverlaps(iterations: number = 2) {
+    for (let pass = 0; pass < iterations; pass++) {
+      const sorted = [...this.drones].sort((a, b) => a.position.x - b.position.x);
+      for (let i = 0; i < sorted.length; i++) {
+        const d1 = sorted[i];
+        for (let j = i + 1; j < sorted.length; j++) {
+          const d2 = sorted[j];
+          const minDist = d1.radius + d2.radius + 4;
+          if (d2.position.x - d1.position.x > minDist) break;
+          if (Math.abs(d2.position.y - d1.position.y) > minDist) continue;
+
+          const distSq = d1.position.distanceSq(d2.position);
+          if (distSq >= minDist * minDist) continue;
+
+          const dist = Math.sqrt(Math.max(distSq, 0.0001));
+          const direction = dist > 0.01
+            ? d1.position.sub(d2.position).div(dist)
+            : new Vector2(Math.cos(i + pass), Math.sin(j + pass)).normalize();
+          const overlap = minDist - dist;
+          const correction = direction.mult(overlap * 0.52);
+          d1.position = d1.position.add(correction);
+          d2.position = d2.position.sub(correction);
+          d1.velocity = d1.velocity.mult(0.82);
+          d2.velocity = d2.velocity.mult(0.82);
+        }
+      }
+    }
+  }
+
+  private planLeaderDecision(activeTarget: Vector2 | null, currentCentroid: Vector2) {
+    const fallbackDecision = this.leader.analyze(this.tick, this.drones, this.environment, activeTarget, currentCentroid);
+    this.recordLeaderDecision(fallbackDecision);
+    this.applyLeaderDecision(fallbackDecision);
+
+    if (this.leader.computeMode !== 'groq' || this.groqRequestInFlight || this.tick < this.groqCooldownUntilTick) {
+      if (this.leader.computeMode !== 'groq') {
+        this.groqStatus = 'idle';
+        this.groqLastError = null;
+      } else if (this.tick < this.groqCooldownUntilTick) {
+        this.groqStatus = 'fallback';
+      }
+      return;
+    }
+
+    const snapshot = this.leader.buildSnapshot(
+      this.tick,
+      this.formation,
+      this.behavior,
+      this.drones,
+      this.environment,
+      activeTarget,
+      currentCentroid
+    );
+
+    this.groqRequestInFlight = true;
+    this.groqStatus = 'requesting';
+    this.groqLastError = null;
+    this.leader.requestGroqDecision(snapshot)
+      .then((decision) => {
+        this.groqStatus = 'online';
+        this.groqLastError = null;
+        this.leader.acceptExternalDecision(decision);
+        this.recordLeaderDecision(decision);
+        this.applyLeaderDecision(decision);
+      })
+      .catch((error) => {
+        this.groqStatus = 'fallback';
+        const typedError = error as Error & { retryAfterSeconds?: number };
+        const retryAfterSeconds = typedError.retryAfterSeconds;
+        const cooldownSeconds = retryAfterSeconds ? Math.ceil(retryAfterSeconds) + 3 : 20;
+        this.groqCooldownUntilTick = this.tick + Math.ceil(cooldownSeconds * 60);
+        this.groqLastError = retryAfterSeconds
+          ? `Groq rate limit reached. Local fallback active for about ${cooldownSeconds}s.`
+          : error instanceof Error ? error.message : 'Groq planner unavailable.';
+        fallbackDecision.fallbackReason = this.groqLastError;
+        this.leader.lastDecision = fallbackDecision;
+      })
+      .finally(() => {
+        this.groqRequestInFlight = false;
+      });
+  }
+
+  private recordLeaderDecision(decision: LeaderDecision) {
+    const duplicate = this.leaderDecisionHistory[0];
+    if (duplicate && duplicate.tick === decision.tick && duplicate.source === decision.source) {
+      this.leaderDecisionHistory[0] = decision;
+      return;
+    }
+    this.leaderDecisionHistory.unshift(decision);
+    if (this.leaderDecisionHistory.length > 10) {
+      this.leaderDecisionHistory.pop();
+    }
+  }
+
+  private recordCommunication(from: string, role: string, message: DroneMessage) {
+    if (this.tick % 10 !== 0) return;
+
+    const type = message.type;
+    const value = message.value;
+    const summary = type === 'DISTRESS'
+      ? `${from} reports structural distress at ${Number(value).toFixed(0)}% health.`
+      : type === 'LOW_ENERGY'
+        ? `${from} requests energy-aware routing at ${Number(value).toFixed(0)}% battery.`
+        : type === 'HAZARD_DETECTED'
+          ? `${from} detected a nearby hazard and is warning the leader.`
+          : `${from} received leader command ${value}.`;
+
+    this.communicationLog.unshift({
+      id: `${this.tick}-${from}-${type}-${Math.random().toString(36).slice(2, 7)}`,
+      tick: this.tick,
+      time: Date.now(),
+      from,
+      to: this.leaderDroneId || 'leader',
+      type,
+      role,
+      summary,
+      value,
+    });
+
+    if (this.communicationLog.length > 80) {
+      this.communicationLog.pop();
+    }
+  }
+
+  private recordRoutineTelemetry(drone: Drone, activeTarget: Vector2 | null) {
+    if (!this.leaderDroneId || drone.isLeader || this.tick % 30 !== 0) return;
+
+    const desiredPos = activeTarget && drone.targetOffset ? activeTarget.add(drone.targetOffset) : null;
+    const slotError = desiredPos ? drone.position.distance(desiredPos) : 0;
+    const summary = `${drone.id} reports ${drone.behaviorProfile} telemetry: energy ${drone.energy.toFixed(0)}%, health ${drone.health.toFixed(0)}%, slot error ${slotError.toFixed(0)}.`;
+
+    this.communicationLog.unshift({
+      id: `${this.tick}-${drone.id}-STATUS`,
+      tick: this.tick,
+      time: Date.now(),
+      from: drone.id,
+      to: this.leaderDroneId,
+      type: 'STATUS_REPORT',
+      role: drone.behaviorProfile,
+      summary,
+      value: slotError.toFixed(0),
+    });
+
+    if (this.communicationLog.length > 80) {
+      this.communicationLog.pop();
+    }
+  }
+
+  private applyLeaderDecision(decision: LeaderDecision) {
+    const leaderDrone = this.drones.find(d => d.id === this.leaderDroneId);
+    if (leaderDrone) {
+      leaderDrone.leaderCommand = decision.command;
+    }
+
+    this.drones.forEach((drone) => {
+      if (!drone.isLeader) {
+        drone.leaderCommand = decision.command;
+      }
+
+      if (decision.command === 'REGROUP') {
+        drone.localCohesionMult = Math.min(2.4, drone.localCohesionMult + 0.35);
+        drone.localTargetMult = Math.min(3.0, drone.localTargetMult + 0.7);
+      } else if (decision.command === 'AVOID_HAZARDS') {
+        drone.localSeparationMult = Math.min(4.0, drone.localSeparationMult + 0.9);
+        drone.localTargetMult = Math.min(2.4, drone.localTargetMult + 0.3);
+      } else if (decision.command === 'CONSERVE_ENERGY') {
+        drone.localCohesionMult = Math.min(1.8, drone.localCohesionMult + 0.15);
+        drone.localTargetMult = Math.min(2.0, drone.localTargetMult + 0.15);
+      } else if (decision.command === 'EXPAND_SEARCH' && drone.behaviorProfile === 'Scout') {
+        drone.localTargetMult = Math.max(1.0, drone.localTargetMult - 0.3);
+      }
+    });
+
+    if (decision.command === 'CONSERVE_ENERGY') {
+      this.config.wanderWeight = Math.min(this.config.wanderWeight || 0.2, 0.4);
+    } else if (decision.command === 'REGROUP') {
+      this.config.cohesionWeight = Math.max(this.config.cohesionWeight, 1.6);
+      this.config.targetWeight = Math.max(this.config.targetWeight, 3.5);
+    } else if (decision.command === 'AVOID_HAZARDS') {
+      this.config.obstacleWeight = Math.max(this.config.obstacleWeight, 8.0);
+      this.config.separationWeight = Math.max(this.config.separationWeight, 3.0);
+      if (decision.target) this.target = decision.target.copy();
+    } else if (decision.command === 'EXPAND_SEARCH') {
+      this.config.wanderWeight = Math.max(this.config.wanderWeight || 0.2, 1.8);
+      this.config.cohesionWeight = Math.min(this.config.cohesionWeight, 1.0);
+    }
   }
 }

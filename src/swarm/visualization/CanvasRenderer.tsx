@@ -18,9 +18,33 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
   const hoveredObstacleIndexRef = useRef<number | null>(null);
   
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 });
+  const canvasSizeRef = useRef({ width: 1, height: 1, dpr: 1 });
+  const hasFramedViewRef = useRef(false);
   const isPanningRef = useRef(false);
   const lastMouseRef = useRef({ x: 0, y: 0 });
   const droneCanvasesRef = useRef<Record<string, HTMLCanvasElement>>({});
+
+  const fitSimulationInView = () => {
+    const { width, height } = canvasSizeRef.current;
+    if (width <= 1 || height <= 1) return;
+
+    const padding = 120;
+    const zoom = Math.min(
+      1.15,
+      Math.max(0.45, Math.min(width / (simulation.environment.width + padding), height / (simulation.environment.height + padding)))
+    );
+    const center = new Vector2(simulation.environment.width / 2, simulation.environment.height / 2);
+    cameraRef.current = {
+      x: width / 2 - center.x * zoom,
+      y: height / 2 - center.y * zoom,
+      zoom,
+    };
+  };
+
+  const screenToWorld = (screenX: number, screenY: number) => {
+    const { x: cx, y: cy, zoom } = cameraRef.current;
+    return new Vector2((screenX - cx) / zoom, (screenY - cy) / zoom);
+  };
 
   useEffect(() => {
     const profiles = {
@@ -147,7 +171,9 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       simulation.step();
 
       const { x: cx, y: cy, zoom } = cameraRef.current;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const { width, height, dpr } = canvasSizeRef.current;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
 
       ctx.save();
       ctx.translate(cx, cy);
@@ -157,9 +183,9 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       const gridSize = 40;
       
       const startX = Math.floor(-cx / zoom / gridSize) * gridSize;
-      const endX = startX + canvas.width / zoom + gridSize * 2;
+      const endX = startX + width / zoom + gridSize * 2;
       const startY = Math.floor(-cy / zoom / gridSize) * gridSize;
-      const endY = startY + canvas.height / zoom + gridSize * 2;
+      const endY = startY + height / zoom + gridSize * 2;
 
       ctx.beginPath();
       for (let x = startX; x <= endX; x += gridSize) {
@@ -606,6 +632,28 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
           ctx.beginPath(); ctx.moveTo(0, -28 - selectPulse * 4); ctx.lineTo(0, -20); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(0, 28 + selectPulse * 4); ctx.lineTo(0, 20); ctx.stroke();
         }
+        if (drone.isLeader) {
+          const leaderPulse = (Math.sin(Date.now() / 240) + 1) / 2;
+          ctx.save();
+          ctx.rotate(-drone.rotation);
+          ctx.strokeStyle = `rgba(34, 197, 94, ${0.55 + leaderPulse * 0.35})`;
+          ctx.lineWidth = (2 + leaderPulse) / visualScale;
+          ctx.setLineDash([4 / visualScale, 3 / visualScale]);
+          ctx.beginPath();
+          ctx.arc(0, 0, 30 + leaderPulse * 4, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.95)';
+          ctx.font = `bold ${9 / visualScale}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.fillText('LEADER', 0, -38 / visualScale);
+          if (drone.leaderCommand) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.font = `${7 / visualScale}px monospace`;
+            ctx.fillText(drone.leaderCommand, 0, -30 / visualScale);
+          }
+          ctx.restore();
+        }
         ctx.rotate(-drone.rotation);
         ctx.scale(1 / visualScale, 1 / visualScale); // undo visual scale
         ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
@@ -629,7 +677,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       ctx.restore();
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.font = '12px monospace';
-      ctx.fillText(`ZOOM: ${zoom.toFixed(2)}x | PAN: Middle Click / Alt+Drag`, 20, canvas.height - 20);
+      ctx.fillText(`ZOOM: ${zoom.toFixed(2)}x | PAN: Middle Click / Alt+Drag`, 20, height - 20);
 
       animationFrameId = requestAnimationFrame(render);
     };
@@ -647,10 +695,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
     const rect = canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-    
-    const { x: cx, y: cy, zoom } = cameraRef.current;
-    const worldX = (screenX - cx) / zoom;
-    const worldY = (screenY - cy) / zoom;
+    const worldPos = screenToWorld(screenX, screenY);
     
     if (e.shiftKey) {
       if (e.type === 'pointerdown') {
@@ -669,7 +714,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
 
         simulation.environment.addObstacle({ 
           type: selectedObstacleType,
-          position: new Vector2(worldX, worldY), 
+          position: worldPos, 
           radius,
           width,
           height,
@@ -677,7 +722,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
         });
       }
     } else {
-      simulation.setTarget(worldX, worldY);
+      simulation.setTarget(worldPos.x, worldPos.y);
     }
   };
 
@@ -693,11 +738,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       const rect = canvas.getBoundingClientRect();
       const screenX = e.clientX - rect.left;
       const screenY = e.clientY - rect.top;
-      
-      const { x: cx, y: cy, zoom } = cameraRef.current;
-      const worldX = (screenX - cx) / zoom;
-      const worldY = (screenY - cy) / zoom;
-      const clickPos = new Vector2(worldX, worldY);
+      const clickPos = screenToWorld(screenX, screenY);
       if (!e.shiftKey) {
         let clickedObstacleIndex = -1;
         for (let i = simulation.environment.obstacles.length - 1; i >= 0; i--) {
@@ -752,18 +793,15 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
     const rect = canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
-    const { x: cx, y: cy, zoom } = cameraRef.current;
-    const worldX = (screenX - cx) / zoom;
-    const worldY = (screenY - cy) / zoom;
-    const worldPos = new Vector2(worldX, worldY);
+    const worldPos = screenToWorld(screenX, screenY);
     let hoveredIdx = -1;
     for (let i = simulation.environment.obstacles.length - 1; i >= 0; i--) {
       const obs = simulation.environment.obstacles[i];
       if (obs.type === 'rect') {
         const hw = (obs.width || 50) / 2;
         const hh = (obs.height || 50) / 2;
-        if (worldX >= obs.position.x - hw && worldX <= obs.position.x + hw &&
-            worldY >= obs.position.y - hh && worldY <= obs.position.y + hh) {
+        if (worldPos.x >= obs.position.x - hw && worldPos.x <= obs.position.x + hw &&
+            worldPos.y >= obs.position.y - hh && worldPos.y <= obs.position.y + hh) {
           hoveredIdx = i;
           break;
         }
@@ -788,11 +826,9 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       const rect = canvas.getBoundingClientRect();
       const screenX = e.clientX - rect.left;
       const screenY = e.clientY - rect.top;
-      const { x: cx, y: cy, zoom } = cameraRef.current;
-      const worldX = (screenX - cx) / zoom;
-      const worldY = (screenY - cy) / zoom;
+      const worldPos = screenToWorld(screenX, screenY);
       
-      simulation.environment.obstacles[draggedObstacleIndexRef.current].position = new Vector2(worldX, worldY);
+      simulation.environment.obstacles[draggedObstacleIndexRef.current].position = worldPos;
     } else if (isDragging) {
       updateTarget(e);
     }
@@ -818,7 +854,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
     
     const zoomSensitivity = 0.001;
     const delta = -e.deltaY * zoomSensitivity;
-    const newZoom = Math.max(0.1, Math.min(10, cameraRef.current.zoom * (1 + delta)));
+    const newZoom = Math.max(0.45, Math.min(3, cameraRef.current.zoom * (1 + delta)));
     
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -833,19 +869,38 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
   };
 
   useEffect(() => {
+    hasFramedViewRef.current = false;
+
     const handleResize = () => {
-      if (canvasRef.current) {
-        const parent = canvasRef.current.parentElement;
-        if (parent) {
-          canvasRef.current.width = parent.clientWidth;
-          canvasRef.current.height = parent.clientHeight;
-        }
+      const canvas = canvasRef.current;
+      const parent = canvas?.parentElement;
+      if (!canvas || !parent) return;
+
+      const rect = parent.getBoundingClientRect();
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      const width = Math.max(1, Math.floor(rect.width));
+      const height = Math.max(1, Math.floor(rect.height));
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      canvasSizeRef.current = { width, height, dpr };
+
+      if (!hasFramedViewRef.current || cameraRef.current.zoom < 0.45) {
+        fitSimulationInView();
+        hasFramedViewRef.current = true;
       }
     };
     handleResize();
+    const parent = canvasRef.current?.parentElement;
+    const resizeObserver = parent ? new ResizeObserver(handleResize) : null;
+    if (parent) resizeObserver?.observe(parent);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [simulation]);
 
   return (
     <canvas
@@ -855,6 +910,7 @@ export const CanvasRenderer: React.FC<Props> = ({ simulation, selectedObstacleTy
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
       onWheel={handleWheel}
+      onDoubleClick={fitSimulationInView}
       className="panel cursor-crosshair w-full h-full bg-background"
       style={{ touchAction: 'none' }}
     />

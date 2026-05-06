@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Simulation, Formation, TrailStyle } from '../simulation/Simulation';
 import { CanvasRenderer } from './CanvasRenderer';
-import { Square, Play, RotateCcw, X, Plus, Circle, Square as SquareIcon, Zap, Magnet, Activity, ShieldAlert, List, Save, Download } from 'lucide-react';
+import { Square, Play, RotateCcw, X, Circle, Square as SquareIcon, Zap, Magnet, Activity, ShieldAlert, List, Save, Download, BrainCircuit, Cpu, RadioTower, MessageSquareText } from 'lucide-react';
 import { Vector2 } from '../utils/Vector2';
 import { Toaster, toast } from 'sonner';
 import { ObstacleType } from '../environment/Environment';
@@ -13,8 +13,7 @@ export const Dashboard: React.FC = () => {
   const [selectedObstacleType, setSelectedObstacleType] = useState<ObstacleType>('circle');
   const [selectedDroneId, setSelectedDroneId] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'control' | 'log' | 'inspect'>('control');
-  const [showFormation, setShowFormation] = useState(true);
+  const [activeTab, setActiveTab] = useState<'control' | 'leader' | 'log' | 'inspect'>('control');
   const [loadedState, setLoadedState] = useState<any>(null);
   
   const simulation = useMemo(() => {
@@ -69,6 +68,9 @@ export const Dashboard: React.FC = () => {
   };
   const avgSpeed = simulation.drones.reduce((sum, d) => sum + d.velocity.mag(), 0) / (simulation.drones.length || 1);
   const cohesionPct = 79; // Mock for now
+  const leaderDecision = simulation.leader.lastDecision;
+  const leaderDrone = simulation.drones.find(d => d.id === simulation.leaderDroneId);
+  const recentCommunications = simulation.communicationLog.slice(0, 12);
 
   return (
     <div className="h-screen w-screen bg-background text-foreground flex flex-col font-sans overflow-hidden">
@@ -115,6 +117,7 @@ export const Dashboard: React.FC = () => {
             });
             simulation.collisions = 0;
             simulation.activeCollisions.clear();
+            simulation.communicationLog = [];
             setTick(t => t + 1);
             toast('Simulation Reset');
           }} className="p-1.5 border border-border rounded hover:bg-muted transition-colors" title="Reset Simulation">
@@ -149,12 +152,18 @@ export const Dashboard: React.FC = () => {
         {/* SIDEBAR */}
         <aside className="w-96 border-l border-border bg-card flex flex-col h-full shrink-0 overflow-hidden">
           {/* TABS HEADER */}
-          <div className="grid grid-cols-3 border-b border-border bg-muted/5">
+          <div className="grid grid-cols-4 border-b border-border bg-muted/5">
             <button 
               onClick={() => setActiveTab('control')}
               className={`py-3 text-[10px] uppercase tracking-widest font-bold flex flex-col items-center gap-1 transition-all border-r border-border last:border-r-0 ${activeTab === 'control' ? 'bg-primary/5 text-primary border-b-2 border-b-primary' : 'text-muted-foreground hover:bg-muted'}`}
             >
               <Activity size={14} /> <span>CONFIG</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('leader')}
+              className={`py-3 text-[10px] uppercase tracking-widest font-bold flex flex-col items-center gap-1 transition-all border-r border-border last:border-r-0 ${activeTab === 'leader' ? 'bg-primary/5 text-primary border-b-2 border-b-primary' : 'text-muted-foreground hover:bg-muted'}`}
+            >
+              <BrainCircuit size={14} /> <span>LEADER</span>
             </button>
             <button 
               onClick={() => setActiveTab('log')}
@@ -205,7 +214,7 @@ export const Dashboard: React.FC = () => {
                     ))}
                   </div>
                   <div className="mt-4">
-                    <ControlSlider label="SPACING" value={simulation.formationSpacing} min={35} max={100} step={1} onChange={(v) => { 
+                    <ControlSlider label="SPACING" value={simulation.formationSpacing} min={88} max={160} step={1} onChange={(v) => { 
                       simulation.formationSpacing = v; 
                       simulation.setFormation(simulation.formation); 
                       setTick(t => t+1); 
@@ -363,6 +372,147 @@ export const Dashboard: React.FC = () => {
                   }} className="w-full py-2 border border-dashed border-border rounded text-[10px] mono hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-500 transition-all flex items-center justify-center gap-2">
                     <X size={12}/> CLEAR ALL HAZARDS
                   </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'leader' && (
+              <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-2 duration-300">
+                <div className="p-5 border-b border-border bg-muted/5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="label text-primary">LEADER REASONING CORE</span>
+                      <div className="text-[9px] text-muted-foreground mt-1 mono">CENTRAL PLANNER + DRONE AGENTS</div>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        simulation.toggleLeaderBrain(!simulation.leaderEnabled);
+                        setTick(t => t + 1);
+                        toast(simulation.leaderEnabled ? 'Leader brain online' : 'Leader brain offline');
+                      }}
+                      className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer items-center rounded-full transition-colors ${simulation.leaderEnabled ? 'bg-primary' : 'bg-muted'}`}
+                      title="Toggle leader planning"
+                    >
+                      <span className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg transition-transform ${simulation.leaderEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 border-b border-border">
+                  <span className="label block mb-3">COMPUTE MODE</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'groq', label: 'GROQ PRIMARY', icon: <RadioTower size={14} /> },
+                      { id: 'local', label: 'LOCAL FALLBACK', icon: <Cpu size={14} /> }
+                    ].map(mode => (
+                      <button
+                        key={mode.id}
+                        onClick={() => {
+                          simulation.setLeaderMode(mode.id as any);
+                          setTick(t => t + 1);
+                          toast(`Leader compute mode: ${mode.label}`);
+                        }}
+                        className={`py-2 text-[10px] mono flex items-center justify-center gap-2 border rounded transition-all ${simulation.leader.computeMode === mode.id ? 'bg-primary/20 text-primary border-primary' : 'border-border hover:bg-muted text-muted-foreground'}`}
+                      >
+                        {mode.icon} {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-[9px] text-muted-foreground mono leading-relaxed">
+                    Groq is requested through the server-only /api/leader-plan route. If the key, model, or network fails, local fallback keeps command flow alive.
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Metric label="API State" value={simulation.groqStatus.toUpperCase()} />
+                    <Metric label="Source" value={(leaderDecision?.source || 'warming').toUpperCase()} />
+                  </div>
+                  {simulation.groqLastError && (
+                    <div className="mt-3 text-[9px] mono leading-relaxed text-yellow-400 border border-yellow-500/20 bg-yellow-500/5 p-2 rounded">
+                      {simulation.groqLastError}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-5 border-b border-border bg-muted/5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="label block text-primary">AGENT COMMUNICATIONS</span>
+                    <span className="text-[9px] mono text-muted-foreground">{simulation.communicationLog.length} MSG</span>
+                  </div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar pr-1">
+                    {recentCommunications.length === 0 ? (
+                      <div className="text-[10px] mono text-muted-foreground border border-dashed border-border p-4 rounded text-center">
+                        Waiting for worker drone reports.
+                      </div>
+                    ) : (
+                      recentCommunications.map((event) => (
+                        <div key={event.id} className="border border-border bg-background/60 rounded p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <MessageSquareText size={12} className={event.type === 'DISTRESS' ? 'text-red-400' : event.type === 'LOW_ENERGY' ? 'text-yellow-400' : event.type === 'HAZARD_DETECTED' ? 'text-purple-400' : 'text-blue-400'} />
+                              <span className="text-[10px] mono font-bold text-primary">{event.from}</span>
+                            </div>
+                            <span className="text-[8px] mono text-muted-foreground">TICK {event.tick}</span>
+                          </div>
+                          <div className="text-[8px] mono text-muted-foreground mb-1">{event.role} TO {event.to} / {event.type}</div>
+                          <div className="text-[9px] mono text-muted-foreground leading-relaxed">{event.summary}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-5 border-b border-border bg-primary/5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-2 h-2 rounded-full ${simulation.leaderEnabled ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'}`} />
+                    <div>
+                      <div className="text-xs font-bold mono text-primary">{leaderDrone?.id || 'NO-LEADER'}</div>
+                      <div className="text-[9px] text-muted-foreground mono">Commander role: {leaderDrone?.behaviorProfile || 'offline'}</div>
+                    </div>
+                  </div>
+
+                  {leaderDecision ? (
+                    <div className="space-y-4">
+                      <div>
+                        <div className="text-[9px] text-muted-foreground uppercase mono mb-1">Current Command</div>
+                        <div className="text-xl font-bold tracking-tight text-primary">{leaderDecision.command.replace('_', ' ')}</div>
+                      </div>
+                      <div className="text-[10px] mono leading-relaxed text-muted-foreground border border-border bg-background/40 p-3 rounded">
+                        {leaderDecision.summary}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Metric label="Confidence" value={`${(leaderDecision.confidence * 100).toFixed(0)}%`} />
+                        <Metric label="Reports" value={leaderDecision.reportsAnalyzed.toString()} />
+                        <Metric label="Avg Energy" value={`${leaderDecision.avgEnergy.toFixed(0)}%`} />
+                        <Metric label="Avg Health" value={`${leaderDecision.avgHealth.toFixed(0)}%`} />
+                        <Metric label="Hazard" value={leaderDecision.hazardPressure.toFixed(2)} />
+                        <Metric label="Slot Error" value={leaderDecision.formationError.toFixed(0)} />
+                        <Metric label="Brain" value={(leaderDecision.source === 'groq' ? leaderDecision.model || 'GROQ' : 'LOCAL').toUpperCase()} />
+                        <Metric label="Fallback" value={leaderDecision.fallbackReason ? 'ACTIVE' : 'READY'} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] mono text-muted-foreground border border-dashed border-border p-6 rounded text-center">
+                      Awaiting first planning cycle
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-5 overflow-y-auto custom-scrollbar">
+                  <span className="label block mb-3">DECISION HISTORY</span>
+                  <div className="space-y-2">
+                    {simulation.leaderDecisionHistory.length === 0 ? (
+                      <div className="text-[10px] mono text-muted-foreground opacity-50">No leader decisions recorded yet.</div>
+                    ) : (
+                      simulation.leaderDecisionHistory.map((decision) => (
+                        <div key={`${decision.tick}-${decision.command}`} className="border border-border bg-muted/20 rounded p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] mono font-bold text-primary">{decision.command}</span>
+                            <span className="text-[9px] mono text-muted-foreground">TICK {decision.tick}</span>
+                          </div>
+                          <div className="text-[9px] mono text-muted-foreground">{decision.source.toUpperCase()} / {(decision.confidence * 100).toFixed(0)}%</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -562,6 +712,7 @@ export const Dashboard: React.FC = () => {
         <div>TICK/S <span className="text-primary mono ml-1">60.0</span></div>
         <div>STEP MS <span className="text-primary mono ml-1">1.2</span></div>
         <div>AVG SPEED <span className="text-primary mono ml-1">{avgSpeed.toFixed(2)} m/s</span></div>
+        <div>LEADER <span className="text-primary mono ml-1">{leaderDecision?.command || 'WARMING'}</span></div>
         <div>COHESION <span className="text-primary mono ml-1">{cohesionPct}%</span></div>
         <div>TOTAL COLLISIONS <span className="text-primary mono ml-1">{simulation.collisions}</span></div>
         <div>CURRENT COLLISIONS <span className="text-primary mono ml-1">{simulation.currentCollisions}</span></div>
@@ -585,5 +736,12 @@ const ControlSlider = ({ label, value, min, max, step, onChange }: { label: stri
       onChange={(e) => onChange(parseFloat(e.target.value))}
       className="w-full h-1.5 bg-border appearance-none cursor-pointer accent-primary rounded-full"
     />
+  </div>
+);
+
+const Metric = ({ label, value }: { label: string, value: string }) => (
+  <div className="bg-background/40 border border-border rounded p-2">
+    <div className="text-[8px] text-muted-foreground uppercase mono mb-1">{label}</div>
+    <div className="text-xs mono text-primary font-bold">{value}</div>
   </div>
 );

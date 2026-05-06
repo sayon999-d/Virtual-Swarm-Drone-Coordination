@@ -2,9 +2,9 @@ import { Vector2 } from '../utils/Vector2';
 import { ObstacleType } from '../environment/Environment';
 
 export interface DroneMessage {
-  type: 'DISTRESS' | 'LOW_ENERGY' | 'HAZARD_DETECTED';
+  type: 'DISTRESS' | 'LOW_ENERGY' | 'HAZARD_DETECTED' | 'LEADER_COMMAND';
   position?: Vector2;
-  value?: number;
+  value?: number | string;
 }
 
 export interface DroneState {
@@ -16,6 +16,8 @@ export interface DroneState {
   energy: number;
   health: number;
   behaviorProfile?: 'Scout' | 'Defender' | 'Worker' | 'Relay';
+  isLeader?: boolean;
+  leaderCommand?: string | null;
   perceptionMult?: number;
   localSeparationMult?: number;
   localCohesionMult?: number;

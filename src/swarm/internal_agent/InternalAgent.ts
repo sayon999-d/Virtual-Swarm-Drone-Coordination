@@ -80,11 +80,12 @@ export class InternalAgent {
     acceleration = acceleration.add(softForces);
     acceleration = acceleration.add(separation);
     acceleration = acceleration.add(obstacleAvoidance);
-    if (profile === 'Worker' && target && currentState.targetOffset) {
+    if (target && currentState.targetOffset) {
       const targetPos = target.add(currentState.targetOffset);
       const distToTarget = currentState.position.distance(targetPos);
-      if (distToTarget < 30) {
-        const braking = currentState.velocity.mult(-0.95);
+      if (distToTarget < 42) {
+        const brakeStrength = profile === 'Scout' ? 0.55 : profile === 'Defender' ? 0.75 : 0.95;
+        const braking = currentState.velocity.mult(-brakeStrength);
         acceleration = acceleration.add(braking);
       }
     }
@@ -95,6 +96,8 @@ export class InternalAgent {
     let steer = new Vector2(0, 0);
     let distressCount = 0;
     let distressCenter = new Vector2(0, 0);
+    let leaderCommandCenter = new Vector2(0, 0);
+    let leaderCommandCount = 0;
 
     for (const neighbor of neighbors) {
       if (neighbor.messages && neighbor.messages.length > 0) {
@@ -122,6 +125,16 @@ export class InternalAgent {
               const force = (reactRadius / d) * fearMultiplier;
               steer = steer.add(diff.mult(force));
             }
+          } else if (msg.type === 'LEADER_COMMAND') {
+            if (msg.value === 'REGROUP' || msg.value === 'CONSERVE_ENERGY') {
+              leaderCommandCenter = leaderCommandCenter.add(neighbor.position);
+              leaderCommandCount++;
+            } else if (msg.value === 'AVOID_HAZARDS') {
+              steer = steer.add(state.position.sub(neighbor.position).normalize().mult(0.4));
+            } else if (msg.value === 'EXPAND_SEARCH' && profile === 'Scout') {
+              const lateral = new Vector2(-state.velocity.y, state.velocity.x);
+              steer = steer.add(lateral.normalize().mult(0.6));
+            }
           }
         }
       }
@@ -132,7 +145,16 @@ export class InternalAgent {
       let desired = distressCenter.sub(state.position);
       if (desired.magSq() > 0) {
         desired = desired.normalize().mult(maxSpeed);
-        steer = steer.add(desired.sub(state.velocity));
+      steer = steer.add(desired.sub(state.velocity));
+      }
+    }
+
+    if (leaderCommandCount > 0) {
+      leaderCommandCenter = leaderCommandCenter.div(leaderCommandCount);
+      let desired = leaderCommandCenter.sub(state.position);
+      if (desired.magSq() > 0) {
+        desired = desired.normalize().mult(maxSpeed * 0.8);
+        steer = steer.add(desired.sub(state.velocity).mult(0.45));
       }
     }
 

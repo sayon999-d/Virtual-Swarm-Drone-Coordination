@@ -31,6 +31,8 @@ export class Drone {
   localSeparationMult: number = 1.0;
   localCohesionMult: number = 1.0;
   localTargetMult: number = 1.0;
+  isLeader: boolean = false;
+  leaderCommand: string | null = null;
 
   constructor(id: string, x: number, y: number) {
     this.id = id;
@@ -98,6 +100,9 @@ export class Drone {
     if (this.isNearCollision) {
       messages.push({ type: 'HAZARD_DETECTED', position: this.position.copy() });
     }
+    if (this.isLeader && this.leaderCommand) {
+      messages.push({ type: 'LEADER_COMMAND', value: this.leaderCommand });
+    }
 
     return {
       id: this.id,
@@ -108,6 +113,8 @@ export class Drone {
       energy: this.energy,
       health: this.health,
       behaviorProfile: this.behaviorProfile, // Export profile to brain
+      isLeader: this.isLeader,
+      leaderCommand: this.leaderCommand,
       perceptionMult: this.perceptionMult,
       localSeparationMult: this.localSeparationMult,
       localCohesionMult: this.localCohesionMult,

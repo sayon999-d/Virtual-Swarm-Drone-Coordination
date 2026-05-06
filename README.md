@@ -1,353 +1,184 @@
 # Virtual Swarm Drone Coordination
 
-An interactive React + TypeScript simulation for experimenting with coordinated drone swarm behavior, dynamic formations, obstacle avoidance, collision analysis, and mission-style waypoint control.
-
-The app renders the swarm on a live canvas, exposes tuning controls through an operations dashboard, and models each drone as an autonomous agent that reacts to nearby peers, environmental hazards, and shared communication signals.
+🛸 **Virtual Swarm Drone Coordination** is an interactive React + TypeScript simulation for experimenting with multi-agent drone behavior, formation control, hazard avoidance, leader-worker coordination, and AI-assisted mission planning.
 
 Live simulation: https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/
 
-## GitHub Pages Fixes Applied
+> Note: the GitHub Pages build is a static deployment. The Groq-backed leader route is available when running the Vite dev server or a server deployment that can keep `GROQ_API_KEY` private.
 
-The deployment issues were caused by missing GitHub Pages automation and by Vite building asset URLs as if the app were hosted from the domain root. On GitHub Pages project sites, the app is served from a repository subpath such as `/Virtual-Swarm-Drone-Coordination/`.
+## ✨ What Makes This Different
 
-This repository has been updated to fix that:
+Most browser drone demos are visual flocking sketches: particles move, avoid each other, and maybe follow a target. This project is designed as a **swarm coordination lab** instead.
 
-- `vite.config.ts` now sets a repository-aware `base` path during GitHub Actions builds.
-- `.github/workflows/deploy-pages.yml` now builds the site and deploys the `dist/` artifact to GitHub Pages.
-- The workflow uses `npm ci`, Node.js 20, and the official Pages deploy actions for a predictable pipeline.
+- 🧠 **Leader brain + worker agents**
+  One drone acts as the commander. It reads telemetry from the rest of the swarm, decides the next high-level command, and broadcasts that command back to the fleet.
 
-That combination prevents the common blank-page / missing-assets failure where the generated HTML points to `/assets/...` instead of `/<repo-name>/assets/...`.
+- ⚡ **Groq-first planning with local fallback**
+  The leader can ask a Groq-hosted model for high-level mission decisions. If the API key is missing, rate-limited, or unavailable, the local planner keeps the swarm alive without freezing the simulation.
 
-## Deployment Pipeline
+- 📡 **Visible agent communication**
+  The Leader panel shows what worker drones are trying to tell the commander: status reports, low energy alerts, hazard warnings, and distress messages.
 
-```mermaid
-flowchart TD
-    A[Push changes to main] --> B[Run deploy pages workflow]
-    B --> C[Checkout repository]
-    C --> D[Setup Node 20 and npm cache]
-    D --> E[Install dependencies with npm ci]
-    E --> F[Build app with Vite]
-    F --> G[Read GitHub repository name]
-    G --> H[Set GitHub Pages base path]
-    H --> I[Write static files to dist]
-    I --> J[Configure Pages]
-    J --> K[Upload Pages artifact]
-    K --> L[Deploy artifact to GitHub Pages]
-    L --> M[Publish site]
-```
+- 🧩 **Hybrid control model**
+  The model does not micromanage drone physics. Groq chooses strategic commands such as `REGROUP`, `AVOID_HAZARDS`, or `CONSERVE_ENERGY`; the simulation handles steering, force limits, collision prevention, and slot settling.
 
-### Pipeline Explanation
+- 🧭 **Formation-aware stability**
+  Formations use safe spacing, slot assignment, near-slot braking, separation pressure, and overlap recovery so drones do not simply snap into unrealistic positions.
 
-1. A push to `main` triggers the Pages workflow.
-2. GitHub Actions checks out the repository and installs dependencies with `npm ci`.
-3. `npm run build` runs Vite. During that build, `vite.config.ts` detects the GitHub Actions environment and derives the repository name from `GITHUB_REPOSITORY`.
-4. Vite sets the public base path to `/<repo-name>/`, which makes all generated JS, CSS, and asset references correct for a GitHub Pages project site.
-5. The built output is stored in `dist/`, uploaded as a Pages artifact, and deployed through the official `deploy-pages` action.
-6. GitHub Pages serves the published static site from the repository URL.
+- 🧱 **Hazard-rich environment**
+  Obstacles are not just drawings. Electrical storms, magnetic fields, blocks, and pillars affect routing, energy, health, collision pressure, and communications.
 
-Expected Pages URL:
+- 🛰️ **Scalable local perception**
+  Drones query nearby agents through a spatial grid instead of scanning the whole swarm each frame, making the behavior closer to decentralized local awareness.
 
-`https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/`
-
-## Runtime Architecture
+## 🧠 System Concept
 
 ```mermaid
 flowchart LR
-    UI[React Dashboard UI] --> SIM[Simulation Engine]
-    UI --> CANVAS[CanvasRenderer]
-    UI --> STORE[Local storage save and load]
-
-    SIM --> DRONES[Drone fleet]
-    SIM --> ENV[Environment and obstacles]
-    SIM --> BUS[MessageBus]
-    BUS --> GRID[SpatialGrid]
-
-    DRONES --> STATE[Drone state snapshots]
-    STATE --> BUS
-
-    DRONES --> BRAIN[InternalAgent]
-    BRAIN --> RULES[Separation alignment and cohesion]
-    BRAIN --> TARGETS[Formation targeting and autopilot]
-    BRAIN --> HAZARDS[Obstacle avoidance and hazard response]
-    BRAIN --> COMMS[Distress low energy and hazard messages]
-
-    SIM --> METRICS[Collision tracking and tick metrics]
-    CANVAS --> METRICS
-    CANVAS --> DRONES
-    CANVAS --> ENV
+    Drones[Worker drones] -->|telemetry + messages| Bus[MessageBus + SpatialGrid]
+    Bus --> Leader[Leader drone]
+    Leader -->|compact mission snapshot| Groq[Groq model]
+    Groq -->|strategic JSON command| Leader
+    Leader -->|fallback if needed| Local[Local planner]
+    Leader -->|command broadcast| Drones
+    Drones --> Physics[Steering + collision + formation physics]
+    Physics --> Canvas[Live canvas simulation]
 ```
 
-### Architecture Explanation
+The important split is:
 
-The application is split into a few clear runtime layers:
+- 🧠 **Groq / leader planner:** strategic reasoning
+- 🛠️ **Simulation engine:** motion, collision, hazards, formation settling
+- 📡 **Worker drones:** local sensing, local steering, message reporting
 
-1. `Dashboard.tsx`
-   The control surface for the simulation. It manages the UI state for formations, behavior modes, obstacle selection, persistence, and inspection panels.
+That makes the project closer to an **AI-commanded swarm system** than a simple animation.
 
-2. `CanvasRenderer.tsx`
-   The live visualization layer. It renders drones, trails, hazards, hover states, and selection states onto a canvas while also handling interaction such as panning, zooming, and obstacle manipulation.
+## 🚁 Core Features
 
-3. `Simulation.ts`
-   The orchestration core. It owns the drone collection, environment, message bus, formation logic, autopilot waypoint flow, collision detection, export/import state, and per-tick update cycle.
+- 🎮 Real-time canvas simulation
+- 🧠 Leader drone with Groq-first / local-fallback planner
+- 📡 Worker-to-leader communication feed
+- 🧱 Dynamic hazards: pillars, blocks, electrical storms, magnetic fields
+- 🧭 Formations: `Flock`, `Grid`, `V-Shape`, `Circle`, `Leader`, `Scatter`, `Hexagon`, `Cross`
+- 🛡️ Collision and near-collision detection
+- 🧩 Role profiles: `Scout`, `Defender`, `Worker`, `Relay`
+- 🗺️ Auto-pilot waypoint patrol
+- 💾 Local save/load for repeatable mission snapshots
+- 🔍 Drone inspector with energy, health, role, speed, and telemetry stream
+- 🧪 Tunable steering weights for separation, alignment, and cohesion
 
-4. `Drone.ts`
-   The per-agent state container. Each drone tracks position, velocity, acceleration, energy, health, role profile, formation offset, and recent history used for rendering trails and behavioral feedback.
+## 🧬 Drone Roles
 
-5. `InternalAgent.ts`
-   The decision layer for autonomous motion. It combines flocking rules, obstacle avoidance, formation tracking, wander behavior, and message-driven reactions to produce the force vector applied to each drone on every tick.
+Each drone has a profile that changes how it behaves inside the same world.
 
-6. `MessageBus.ts` and `SpatialGrid.ts`
-   The neighbor-awareness layer. Instead of every drone scanning the full fleet, drone state is published into a spatial index so nearby agents can be queried efficiently. This keeps local perception and communication scalable.
+| Role | Purpose | Behavior |
+| --- | --- | --- |
+| 🔎 `Scout` | Explore and detect hazards | Faster, wider perception, more energy use |
+| 🛡️ `Defender` | Protect and stabilize | Slower, stronger separation, higher health |
+| 🔧 `Worker` | Hold formation | Efficient, slot-focused, low wander |
+| 📡 `Relay` | Improve coordination | Stronger response to communication signals |
 
-7. `Environment.ts`
-   The hazard model. Obstacles such as circular barriers, rectangles, electrical storms, and magnetic fields are stored here and fed into the agent decision system.
+The leader drone is assigned as a `Relay` so it naturally fits the communication-heavy role.
 
-8. Browser `localStorage`
-   The persistence layer used by the dashboard for quick save and load of simulation state, including swarm configuration, drone state, environment hazards, and autopilot waypoints.
+## 🧠 Leader Brain
 
-## Core Behavior Model
+The leader planner produces one of these mission commands:
 
-Each simulation tick follows this general sequence:
+| Command | Meaning |
+| --- | --- |
+| `HOLD_FORMATION` | Keep current slot assignments stable |
+| `REGROUP` | Pull drones toward the commander/centroid |
+| `EXPAND_SEARCH` | Let Scouts widen coverage |
+| `AVOID_HAZARDS` | Prioritize obstacle avoidance and safer routing |
+| `CONSERVE_ENERGY` | Reduce wasteful motion and protect low-energy drones |
+
+### Groq Primary, Local Fallback
+
+Groq is treated as the **main strategic brain**, but the local planner is always available.
+
+The runtime flow is:
+
+1. Worker drones publish telemetry.
+2. The leader builds a compact planning snapshot.
+3. `/api/leader-plan` sends the snapshot to Groq using the server-side `GROQ_API_KEY`.
+4. Groq returns compact JSON.
+5. If Groq fails or hits rate limits, the local planner issues a fallback command.
+6. The leader broadcasts the active command to the swarm.
+
+### Groq Environment Variables
+
+Create a local `.env` file:
+
+```env
+GROQ_API_KEY="your_groq_api_key"
+GROQ_MODEL="llama-3.1-8b-instant"
+```
+
+Recommended model:
+
+- `llama-3.1-8b-instant` for lower token usage and fewer rate-limit issues
+
+The older/larger `llama-3.3-70b-versatile` can work, but it is easier to hit TPM limits on the on-demand tier.
+
+## 📡 Agent Communication Feed
+
+The Leader panel includes an **Agent Communications** section near the top of the panel. It shows what worker drones are reporting:
+
+- `STATUS_REPORT`: routine energy, health, and slot-error updates
+- `LOW_ENERGY`: drone requests energy-aware routing
+- `DISTRESS`: drone reports low health
+- `HAZARD_DETECTED`: drone warns the leader about nearby danger
+- `LEADER_COMMAND`: commander broadcast visible through the message system
+
+This makes the simulation easier to explain: you can see the worker agents sending data, the leader deciding, and the swarm reacting.
+
+## 🧭 Formation System
+
+Structured formations assign each drone to a relative slot around the swarm center. The system avoids naive index-based placement and instead assigns slots by nearest available drone to reduce abrupt role swapping.
+
+Formation stability includes:
+
+- safe formation spacing
+- higher separation pressure in formation mode
+- near-slot braking for all drone roles
+- overlap resolution after movement
+- damping and lower wander during formation settling
+- visual formation guide overlays
+
+This is why the drones can form a V-shape or grid while still behaving like autonomous vehicles rather than instantly teleporting into place.
+
+## 🧱 Hazards And Obstacles
+
+| Hazard | Effect |
+| --- | --- |
+| 🔴 `circle` | Basic radial keep-out pillar |
+| ◼️ `rect` | Block/corridor obstacle |
+| ⚡ `electrical_storm` | Damages health and creates unstable movement |
+| 🧲 `magnetic_field` | Drains energy and slows drones |
+
+Hazards influence local avoidance, message generation, collision risk, and leader decisions.
+
+## 🏗️ Runtime Architecture
 
 ```mermaid
 flowchart TD
-    A[Start Tick] --> B[Clear and rebuild MessageBus]
-    B --> C[Publish each drone state into SpatialGrid]
-    C --> D[Compute centroid and autopilot target]
-    D --> E[Detect collisions and near-collisions]
-    E --> F[For each drone: query neighbors]
-    F --> G[InternalAgent computes steering forces]
-    G --> H[Apply acceleration and update physics]
-    H --> I[Resolve hard collisions]
-    I --> J[Update logs, metrics, and render state]
+    UI[Dashboard UI] --> Sim[Simulation Engine]
+    UI --> Canvas[CanvasRenderer]
+    Sim --> Fleet[Drone Fleet]
+    Sim --> Env[Environment]
+    Sim --> Bus[MessageBus]
+    Bus --> Grid[SpatialGrid]
+    Fleet --> Agent[InternalAgent]
+    Fleet --> Telemetry[Drone Telemetry]
+    Telemetry --> Leader[LeaderAgent]
+    Leader --> GroqRoute[/api/leader-plan]
+    GroqRoute --> Groq[Groq Chat Completions]
+    Leader --> Commands[Leader Commands]
+    Commands --> Fleet
+    Sim --> Logs[Collision + Communication Logs]
 ```
 
-### What the agents optimize for
-
-- `Separation`: avoid crowding and direct overlap.
-- `Alignment`: align velocity with nearby neighbors.
-- `Cohesion`: keep the swarm connected.
-- `Formation Targeting`: pull each drone toward its assigned slot or active target.
-- `Obstacle Avoidance`: steer away from hazards and environmental obstacles.
-- `Communication`: react to distress, low-energy, and hazard-detection broadcasts from nearby drones.
-- `Profile Tuning`: vary movement behavior for `Scout`, `Defender`, `Worker`, and `Relay` drones.
-
-## Feature Summary
-
-- Real-time swarm visualization on canvas
-- Formation modes including `Flock`, `Grid`, `V-Shape`, `Circle`, `Leader`, `Scatter`, `Hexagon`, and `Cross`
-- Auto-pilot waypoint routing
-- Collision and near-collision tracking
-- Obstacle editing and hazard simulation
-- Local save/load of mission state
-- Role-based drone behavior profiles
-- Adjustable movement and flocking controls
-
-## What This Simulation Actually Demonstrates
-
-This project is more than a particle animation. It simulates a fleet of autonomous drones that continuously balance local and global goals.
-
-- Each drone tries to avoid nearby collisions.
-- Each drone tries to align with neighbors and remain part of the group.
-- Each drone can be pulled toward a formation slot or mission target.
-- Each drone reacts to environmental hazards and local status messages.
-- The full swarm adapts in real time as you change formation, density, obstacle layout, or behavior mode.
-
-That combination makes the app useful for demonstrating how decentralized agents can create stable large-scale motion without a single rigid controller micromanaging every step.
-
-## How To Use The Simulation
-
-The simulation is designed to be explored interactively through the dashboard.
-
-1. Start with a moderate drone count such as `30` to `60`.
-2. Switch between formations like `Grid`, `Circle`, or `Hexagon` to see how slot assignment changes the swarm shape.
-3. Increase or decrease `Spacing` to observe how tight formations affect stability and collision pressure.
-4. Change the drone count to test how the same control parameters behave at different swarm densities.
-5. Add obstacles and move them around the scene to see how the swarm reroutes under disturbance.
-6. Enable auto-pilot to make the centroid follow a waypoint route instead of simply orbiting around its current state.
-7. Save a state, modify the environment, then reload it to compare outcomes repeatably.
-
-The app is most interesting when you intentionally push it into unstable conditions and then use the controls to recover order.
-
-## Control Surface Explanation
-
-The dashboard is effectively an operator console for the swarm engine.
-
-- `Formation Matrix`
-  Chooses the geometric arrangement of the drones. Structured formations assign each drone a relative slot around the swarm centroid.
-
-- `Spacing`
-  Controls the desired distance between formation slots. Larger values reduce packing pressure but make formations looser and slower to consolidate.
-
-- `Drone Count`
-  Recreates the simulation with a new fleet size. This is useful for testing how well the same steering rules scale as the swarm grows.
-
-- `Save Current` and `Load Stored`
-  Persist the current mission snapshot in browser `localStorage`, including drone positions, obstacle layout, formation mode, and route state.
-
-- `Auto Pilot`
-  Makes the swarm target a waypoint loop instead of only using the current centroid as its reference point.
-
-- `Behavior`
-  Changes the high-level steering balance by adjusting speed, force, separation, cohesion, and wander weights.
-
-- `Obstacle Tools`
-  Let you inject hazards directly into the environment to test avoidance, crowding, and recovery behavior.
-
-## Formation System In Detail
-
-The formation logic is one of the most important parts of the simulation.
-
-For structured formations, the simulation first generates a list of ideal relative slot positions. Those slots are then centered around the swarm reference point and assigned to drones using a nearest-slot style matching pass. This is much more stable than naively sorting drones and placing them by index, because it reduces sudden role swapping when the formation changes.
-
-The available formation modes represent different coordination patterns:
-
-- `Scatter`
-  Removes strong target-seeking and lets the swarm behave more like a loose roaming group.
-
-- `Flock`
-  Emphasizes classic flocking behavior with minimal rigid slot pressure.
-
-- `Grid`
-  Creates a dense, easily readable arrangement that is useful for comparing spacing and collision behavior.
-
-- `Circle`
-  Places drones around a ring, making it easy to observe angular spacing and convergence.
-
-- `V-Shape`
-  Creates a leader-front layout similar to migration or escort-style motion.
-
-- `Leader`
-  Stacks drones into a line behind a lead direction, which stresses follow behavior.
-
-- `Hexagon`
-  Produces a compact packing pattern that is especially useful for large groups.
-
-- `Cross`
-  Splits the swarm along diagonals and makes disturbance propagation visually obvious.
-
-The formation system also adjusts spacing dynamically based on swarm size so large groups do not collapse into chronic overlap.
-
-## Drone Roles And Behavioral Profiles
-
-Each drone belongs to one of four profiles, and each profile modifies the base steering system in a different way.
-
-- `Scout`
-  Faster, more exploratory, and more sensitive to hazards. Scouts are the wide-perception units that notice trouble early, but they consume more energy and are less durable.
-
-- `Defender`
-  Slower but stronger and more resilient. Defenders react more heavily to distress and local protection behavior.
-
-- `Worker`
-  Efficient and formation-focused. Workers are better at settling into assigned slots and spend less effort on wandering.
-
-- `Relay`
-  Communication-oriented units that react strongly to the swarm message system and improve local coordination.
-
-Because these profiles share the same world and interact through the same neighbor graph, the swarm develops mixed behavior instead of acting like a set of identical particles.
-
-## Steering Model And Physics
-
-Each tick, the engine computes a steering vector for every drone by combining several forces:
-
-- `Separation`
-  Pushes drones away from nearby neighbors when they get too close.
-
-- `Alignment`
-  Encourages similar heading and velocity within a local neighborhood.
-
-- `Cohesion`
-  Pulls a drone back toward the local group center.
-
-- `Formation Target`
-  Pulls a drone toward its assigned slot or the current mission target.
-
-- `Obstacle Avoidance`
-  Applies repulsion around hazards and obstacles.
-
-- `Wander`
-  Adds a controlled amount of randomness so the system does not look mechanically locked.
-
-- `Communication Response`
-  Lets drones react to distress, low-energy, and hazard-detection messages from nearby peers.
-
-The simulation then integrates those forces into velocity, applies damping, limits speed and force, and updates position and orientation. This is why the movement feels like a soft autonomous system instead of immediate grid snapping.
-
-## Communication And Neighbor Search
-
-The app uses a local message bus backed by a spatial grid.
-
-Instead of making every drone compare itself against every other drone every frame, each drone publishes a snapshot of its current state into the `SpatialGrid`. Neighbor queries then only inspect nearby cells rather than the full fleet.
-
-That matters for two reasons:
-
-1. It keeps the simulation closer to decentralized reasoning, because each agent only reacts to local context.
-2. It improves scalability, because local neighborhood lookup is much cheaper than full pairwise comparison as drone count increases.
-
-Each published state can also carry lightweight messages such as:
-
-- `DISTRESS`
-- `LOW_ENERGY`
-- `HAZARD_DETECTED`
-
-Those messages let drones influence one another without introducing a heavy centralized command layer.
-
-## Obstacles And Hazard Modeling
-
-The environment supports multiple obstacle types, each with a slightly different visual and behavioral character.
-
-- `circle`
-  A basic radial keep-out zone.
-
-- `rect`
-  A box-shaped obstacle that is useful for corridor and edge-routing tests.
-
-- `electrical_storm`
-  A hazard-style zone used to represent more volatile interference.
-
-- `magnetic_field`
-  A field-based obstacle that visually and behaviorally suggests steering distortion.
-
-Obstacle intensity and size influence how strongly drones are repelled and how often they fall into unstable, collision-prone states near the hazard boundary.
-
-## Collision Detection, Stability, And Recovery
-
-The simulation does not only render collisions after the fact; it actively tries to predict and recover from instability.
-
-- Near-collision checks identify dangerous crowding before direct overlap happens.
-- Hard-collision detection records actual contacts and visual events.
-- Local multipliers increase separation pressure when a drone becomes unstable or crowded.
-- Formation pressure can increase when a drone drifts too far from its assigned slot.
-- Collision resolution pushes overlapping drones apart and adjusts velocity to reduce sticking and jitter.
-
-This makes the swarm feel self-correcting under pressure rather than permanently chaotic once disturbed.
-
-## State Persistence And Repeatable Scenarios
-
-One underrated feature of the app is state export and import through browser storage.
-
-When you save a mission snapshot, the simulation stores:
-
-- current tick and formation
-- behavior mode and spacing
-- movement configuration
-- autopilot waypoints and active waypoint index
-- environment hazards
-- drone positions, velocity, energy, health, profile, and target offset
-
-That makes it easy to create repeatable test cases for demos, tuning sessions, or side-by-side comparisons of different swarm settings.
-
-## Practical Experiments To Try
-
-If you want to understand the system quickly, these are good experiments:
-
-1. Start in `Scatter`, then switch to `Hexagon` and watch how quickly the group consolidates.
-2. Increase drone count while keeping spacing low to see when collision pressure begins to rise.
-3. Place an `electrical_storm` directly on the route and observe how different role profiles react.
-4. Run auto-pilot with a structured formation, then add obstacles near a waypoint to see how the centroid and slot pressures compete.
-5. Save a stable state, create a hostile obstacle field, and reload the original state to compare recovery behavior cleanly.
-
-## Project Structure
+## 📁 Project Structure
 
 ```text
 src/
@@ -356,67 +187,107 @@ src/
   index.css
   swarm/
     agents/            # Drone state and physics-facing entity logic
-    communication/     # Local message passing
+    communication/     # Message bus
     control/           # Shared swarm configuration
-    environment/       # Obstacle and hazard definitions
-    internal_agent/    # Steering and decision logic
+    environment/       # Obstacles and hazards
+    internal_agent/    # Per-drone steering brain
+    leader/            # Groq-first leader planner and fallback logic
     simulation/        # Core orchestrator
     spatial_index/     # Neighbor lookup optimization
     utils/             # Vector math
     visualization/     # Dashboard and canvas renderer
 ```
 
-## Local Development
+## 🧪 Local Development
 
-### Prerequisites
+### Requirements
 
-- Node.js 20+ recommended
+- Node.js 20+
 - npm
+- Optional: Groq API key for model-backed leader decisions
 
-### Run locally
+### Install
 
 ```bash
 npm ci
+```
+
+### Run
+
+```bash
 npm run dev
 ```
 
-By default the Vite dev server runs at:
+Vite usually starts at:
 
-`http://localhost:3000`
+```text
+http://localhost:3000/
+```
 
-## GitHub Pages Deployment
+If ports are already in use, Vite will choose `3001`, `3002`, and so on.
 
-### Repository settings
-
-In GitHub, open:
-
-`Settings -> Pages -> Build and deployment -> Source`
-
-Set the source to:
-
-`GitHub Actions`
-
-### Deploy flow
-
-After the Pages source is set to GitHub Actions:
-
-1. Push changes to `main`.
-2. Wait for the `Deploy to GitHub Pages` workflow to complete.
-3. Open the published site URL.
-
-## Files Updated for the Fix
-
-- [`vite.config.ts`](./vite.config.ts)
-- [`.github/workflows/deploy-pages.yml`](./.github/workflows/deploy-pages.yml)
-- [`README.md`](./README.md)
-
-## Verification Notes
-
-The repository changes now match the correct GitHub Pages deployment model for a Vite project site. A full local build verification still requires dependency installation in the workspace with:
+### Validate
 
 ```bash
-npm ci
+npm run lint
 npm run build
 ```
 
-Once those commands succeed, the generated `dist/` output is what the GitHub Pages workflow publishes.
+## 🚀 GitHub Pages Deployment
+
+This repository deploys the static app through GitHub Actions.
+
+Required Pages setting:
+
+```text
+Settings -> Pages -> Build and deployment -> Source -> GitHub Actions
+```
+
+Deployment flow:
+
+1. Push to `main`.
+2. GitHub Actions installs dependencies.
+3. TypeScript checks run with `npm run lint`.
+4. Vite builds the app with the correct repository base path.
+5. The `dist/` artifact is uploaded to GitHub Pages.
+6. Pages publishes the site.
+
+## ⚙️ Workflow
+
+The workflow lives at:
+
+```text
+.github/workflows/deploy-pages.yml
+```
+
+It handles:
+
+- ✅ pull request validation
+- ✅ dependency installation with `npm ci`
+- ✅ TypeScript checks
+- ✅ production build
+- ✅ GitHub Pages artifact upload
+- ✅ deployment from `main`
+
+## 🧪 Experiments To Try
+
+1. Switch from `Scatter` to `V-Shape` and watch the slot assignment settle.
+2. Add an `electrical_storm` near the leader and observe hazard messages.
+3. Lower energy by placing magnetic fields, then watch `CONSERVE_ENERGY` decisions.
+4. Open the Leader panel and watch worker drones report status to the commander.
+5. Enable Groq mode and compare Groq decisions against local fallback behavior.
+6. Increase drone count and tune spacing to see when formations become unstable.
+
+## 🧾 Why This Matters
+
+This simulation is useful for demonstrating:
+
+- hierarchical multi-agent coordination
+- local perception with global strategy
+- LLM-assisted command planning
+- fallback-safe AI control loops
+- swarm stability under obstacles and communication pressure
+- visual explainability for agent-to-agent messaging
+
+It is not just “drones moving around.” It is a compact testbed for thinking about how autonomous units can report local reality to a leader, receive a mission-level command, and still preserve local safety.
+
