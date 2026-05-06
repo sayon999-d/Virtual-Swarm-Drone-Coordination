@@ -4,9 +4,7 @@ Virtual Swarm Drone Coordination is an interactive React and TypeScript simulati
 
 The project is designed as a small swarm coordination lab rather than a simple visual flocking sketch. Each drone behaves as an autonomous local agent, while a leader drone can analyze telemetry, issue high-level mission commands, and optionally use a Groq-hosted model as the strategic planner.
 
-Live simulation:
-
-`https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/`
+Live simulation: [https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/](https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/)
 
 Important deployment note:
 
@@ -91,7 +89,7 @@ flowchart TD
     DRONES --> TELEMETRY[Telemetry and Messages]
     TELEMETRY --> LEADER[Leader Agent]
 
-    LEADER --> GROQROUTE[/api/leader-plan]
+    LEADER --> GROQROUTE["/api/leader-plan"]
     GROQROUTE --> GROQ[Groq Chat Completions]
     GROQ --> GROQROUTE
     GROQROUTE --> LEADER
@@ -592,4 +590,3 @@ local drone physics
 ```
 
 The result is a simulation where drones are not just moving dots. They are worker agents reporting to a leader, reacting to local conditions, preserving formation safety, and adapting to mission-level commands.
-
