@@ -1,111 +1,157 @@
 # Virtual Swarm Drone Coordination
 
-🛸 **Virtual Swarm Drone Coordination** is an interactive React + TypeScript simulation for experimenting with multi-agent drone behavior, formation control, hazard avoidance, leader-worker coordination, and AI-assisted mission planning.
+Virtual Swarm Drone Coordination is an interactive React and TypeScript simulation for experimenting with coordinated drone swarm behavior, formation control, leader-worker communication, environmental hazards, collision recovery, and AI-assisted mission planning.
 
-Live simulation: https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/
+The project is designed as a small swarm coordination lab rather than a simple visual flocking sketch. Each drone behaves as an autonomous local agent, while a leader drone can analyze telemetry, issue high-level mission commands, and optionally use a Groq-hosted model as the strategic planner.
 
-> Note: the GitHub Pages build is a static deployment. The Groq-backed leader route is available when running the Vite dev server or a server deployment that can keep `GROQ_API_KEY` private.
+Live simulation:
 
-## ✨ What Makes This Different
+`https://sayon999-d.github.io/Virtual-Swarm-Drone-Coordination/`
 
-Most browser drone demos are visual flocking sketches: particles move, avoid each other, and maybe follow a target. This project is designed as a **swarm coordination lab** instead.
+Important deployment note:
 
-- 🧠 **Leader brain + worker agents**
-  One drone acts as the commander. It reads telemetry from the rest of the swarm, decides the next high-level command, and broadcasts that command back to the fleet.
+The GitHub Pages version is a static frontend deployment. Static hosting cannot safely store or use a private Groq API key at runtime. The Groq-backed `/api/leader-plan` route works when the app is run with a server, such as the local Vite dev server or another deployment platform with backend/serverless support. On GitHub Pages, the simulation should rely on local fallback planning unless you connect it to a separate secure backend proxy.
 
-- ⚡ **Groq-first planning with local fallback**
-  The leader can ask a Groq-hosted model for high-level mission decisions. If the API key is missing, rate-limited, or unavailable, the local planner keeps the swarm alive without freezing the simulation.
+## What Makes This Simulation Different
 
-- 📡 **Visible agent communication**
-  The Leader panel shows what worker drones are trying to tell the commander: status reports, low energy alerts, hazard warnings, and distress messages.
+Many browser-based drone or swarm demos focus on the visual effect of particles moving together. They usually show separation, cohesion, alignment, or target following. This project goes further by modeling the swarm as a coordinated system with multiple layers of decision-making.
 
-- 🧩 **Hybrid control model**
-  The model does not micromanage drone physics. Groq chooses strategic commands such as `REGROUP`, `AVOID_HAZARDS`, or `CONSERVE_ENERGY`; the simulation handles steering, force limits, collision prevention, and slot settling.
+The main differences are:
 
-- 🧭 **Formation-aware stability**
-  Formations use safe spacing, slot assignment, near-slot braking, separation pressure, and overlap recovery so drones do not simply snap into unrealistic positions.
+1. Leader-worker architecture
 
-- 🧱 **Hazard-rich environment**
-  Obstacles are not just drawings. Electrical storms, magnetic fields, blocks, and pillars affect routing, energy, health, collision pressure, and communications.
+   One drone is treated as the leader. It receives reports from the worker drones, analyzes the swarm state, and broadcasts a strategic command back to the swarm.
 
-- 🛰️ **Scalable local perception**
-  Drones query nearby agents through a spatial grid instead of scanning the whole swarm each frame, making the behavior closer to decentralized local awareness.
+2. Groq-first strategic planning
 
-## 🧠 System Concept
+   The leader can ask a Groq model to choose a mission-level command. The model is not responsible for frame-by-frame movement. It only decides strategy.
 
-```mermaid
-flowchart LR
-    Drones[Worker drones] -->|telemetry + messages| Bus[MessageBus + SpatialGrid]
-    Bus --> Leader[Leader drone]
-    Leader -->|compact mission snapshot| Groq[Groq model]
-    Groq -->|strategic JSON command| Leader
-    Leader -->|fallback if needed| Local[Local planner]
-    Leader -->|command broadcast| Drones
-    Drones --> Physics[Steering + collision + formation physics]
-    Physics --> Canvas[Live canvas simulation]
+3. Local fallback planner
+
+   If Groq is not configured, rate-limited, offline, or unavailable, the local planner continues issuing safe commands so the simulation does not freeze.
+
+4. Visible agent communication
+
+   The Leader panel shows what the worker drones are trying to communicate: status reports, low energy warnings, hazard alerts, and distress messages.
+
+5. Formation stability logic
+
+   Structured formations use safe spacing, slot assignment, braking near assigned slots, separation pressure, and overlap recovery. Drones do not simply teleport into perfect positions.
+
+6. Hazard-aware decisions
+
+   Obstacles affect movement, energy, health, and command decisions. Hazards are part of the simulation state, not only visual decoration.
+
+7. Scalable local perception
+
+   Drones use a spatial grid to query local neighbors instead of comparing against every other drone every frame.
+
+8. Hybrid AI control loop
+
+   The model decides high-level intent. The simulation engine handles local physics, collisions, routing pressure, and formation stabilization.
+
+This makes the project closer to a prototype for AI-assisted swarm coordination than a basic animation.
+
+## High-Level Concept
+
+The system is built around a hierarchy:
+
+```text
+Leader drone
+  receives telemetry from worker drones
+  asks Groq for strategic planning when available
+  falls back to local planning when needed
+  broadcasts one high-level command
+
+Worker drones
+  sense local state
+  report status or hazards
+  react to neighbors
+  follow formation slots
+  avoid collisions and obstacles
 ```
 
-The important split is:
+The important design choice is that the leader does not directly control every movement of every drone. That would make the system brittle and unrealistic. Instead, the leader sets mission intent, and every drone still uses local steering rules to remain safe.
 
-- 🧠 **Groq / leader planner:** strategic reasoning
-- 🛠️ **Simulation engine:** motion, collision, hazards, formation settling
-- 📡 **Worker drones:** local sensing, local steering, message reporting
+## Runtime Architecture
 
-That makes the project closer to an **AI-commanded swarm system** than a simple animation.
+```mermaid
+flowchart TD
+    UI[Dashboard UI] --> SIM[Simulation Engine]
+    UI --> CANVAS[Canvas Renderer]
 
-## 🚁 Core Features
+    SIM --> DRONES[Drone Fleet]
+    SIM --> ENV[Environment and Hazards]
+    SIM --> BUS[Message Bus]
+    BUS --> GRID[Spatial Grid]
 
-- 🎮 Real-time canvas simulation
-- 🧠 Leader drone with Groq-first / local-fallback planner
-- 📡 Worker-to-leader communication feed
-- 🧱 Dynamic hazards: pillars, blocks, electrical storms, magnetic fields
-- 🧭 Formations: `Flock`, `Grid`, `V-Shape`, `Circle`, `Leader`, `Scatter`, `Hexagon`, `Cross`
-- 🛡️ Collision and near-collision detection
-- 🧩 Role profiles: `Scout`, `Defender`, `Worker`, `Relay`
-- 🗺️ Auto-pilot waypoint patrol
-- 💾 Local save/load for repeatable mission snapshots
-- 🔍 Drone inspector with energy, health, role, speed, and telemetry stream
-- 🧪 Tunable steering weights for separation, alignment, and cohesion
+    DRONES --> AGENT[Internal Agent]
+    AGENT --> STEERING[Steering Forces]
 
-## 🧬 Drone Roles
+    DRONES --> TELEMETRY[Telemetry and Messages]
+    TELEMETRY --> LEADER[Leader Agent]
 
-Each drone has a profile that changes how it behaves inside the same world.
+    LEADER --> GROQROUTE[/api/leader-plan]
+    GROQROUTE --> GROQ[Groq Chat Completions]
+    GROQ --> GROQROUTE
+    GROQROUTE --> LEADER
 
-| Role | Purpose | Behavior |
-| --- | --- | --- |
-| 🔎 `Scout` | Explore and detect hazards | Faster, wider perception, more energy use |
-| 🛡️ `Defender` | Protect and stabilize | Slower, stronger separation, higher health |
-| 🔧 `Worker` | Hold formation | Efficient, slot-focused, low wander |
-| 📡 `Relay` | Improve coordination | Stronger response to communication signals |
+    LEADER --> FALLBACK[Local Planner Fallback]
+    LEADER --> COMMANDS[Leader Commands]
+    COMMANDS --> DRONES
 
-The leader drone is assigned as a `Relay` so it naturally fits the communication-heavy role.
+    SIM --> LOGS[Collision and Communication Logs]
+    LOGS --> UI
+```
 
-## 🧠 Leader Brain
+## Core Runtime Loop
 
-The leader planner produces one of these mission commands:
+Each simulation tick follows this general process:
+
+```mermaid
+flowchart TD
+    A[Start Tick] --> B[Clear and rebuild message bus]
+    B --> C[Publish drone state snapshots]
+    C --> D[Compute centroid and active target]
+    D --> E[Record worker-to-leader communication]
+    E --> F[Leader plans at interval]
+    F --> G[Query local neighbors from spatial grid]
+    G --> H[Each drone computes steering force]
+    H --> I[Apply physics and damping]
+    I --> J[Resolve formation overlap]
+    J --> K[Resolve hard collisions]
+    K --> L[Update logs and render frame]
+```
+
+This separation lets the swarm remain responsive without asking the AI model for a decision every animation frame.
+
+## Leader Brain
+
+The leader can issue one of five high-level commands:
 
 | Command | Meaning |
 | --- | --- |
-| `HOLD_FORMATION` | Keep current slot assignments stable |
-| `REGROUP` | Pull drones toward the commander/centroid |
-| `EXPAND_SEARCH` | Let Scouts widen coverage |
-| `AVOID_HAZARDS` | Prioritize obstacle avoidance and safer routing |
-| `CONSERVE_ENERGY` | Reduce wasteful motion and protect low-energy drones |
+| `HOLD_FORMATION` | Keep the current formation stable |
+| `REGROUP` | Pull the swarm closer together |
+| `EXPAND_SEARCH` | Let scouts widen coverage |
+| `AVOID_HAZARDS` | Prioritize obstacle avoidance and safe spacing |
+| `CONSERVE_ENERGY` | Reduce wasteful movement and protect low-energy drones |
 
-### Groq Primary, Local Fallback
+The leader command affects the simulation by adjusting local steering pressure, target pressure, cohesion, separation, and hazard avoidance.
 
-Groq is treated as the **main strategic brain**, but the local planner is always available.
+## Groq Integration
 
-The runtime flow is:
+The project includes a server-side Vite development route:
 
-1. Worker drones publish telemetry.
-2. The leader builds a compact planning snapshot.
-3. `/api/leader-plan` sends the snapshot to Groq using the server-side `GROQ_API_KEY`.
-4. Groq returns compact JSON.
-5. If Groq fails or hits rate limits, the local planner issues a fallback command.
-6. The leader broadcasts the active command to the swarm.
+```text
+/api/leader-plan
+```
 
-### Groq Environment Variables
+This route reads `GROQ_API_KEY` from the server environment and calls Groq's OpenAI-compatible chat completions endpoint.
+
+The frontend never receives the API key.
+
+### Local Environment
 
 Create a local `.env` file:
 
@@ -116,103 +162,271 @@ GROQ_MODEL="llama-3.1-8b-instant"
 
 Recommended model:
 
-- `llama-3.1-8b-instant` for lower token usage and fewer rate-limit issues
+```text
+llama-3.1-8b-instant
+```
 
-The older/larger `llama-3.3-70b-versatile` can work, but it is easier to hit TPM limits on the on-demand tier.
+This model is preferred because it uses fewer tokens and is less likely to hit token-per-minute limits.
 
-## 📡 Agent Communication Feed
+The larger model:
 
-The Leader panel includes an **Agent Communications** section near the top of the panel. It shows what worker drones are reporting:
+```text
+llama-3.3-70b-versatile
+```
 
-- `STATUS_REPORT`: routine energy, health, and slot-error updates
-- `LOW_ENERGY`: drone requests energy-aware routing
-- `DISTRESS`: drone reports low health
-- `HAZARD_DETECTED`: drone warns the leader about nearby danger
-- `LEADER_COMMAND`: commander broadcast visible through the message system
+can work, but it is easier to hit on-demand tier rate limits.
 
-This makes the simulation easier to explain: you can see the worker agents sending data, the leader deciding, and the swarm reacting.
+### Rate Limit Handling
 
-## 🧭 Formation System
+If Groq returns a rate-limit error, the simulation does not stop. It:
 
-Structured formations assign each drone to a relative slot around the swarm center. The system avoids naive index-based placement and instead assigns slots by nearest available drone to reduce abrupt role swapping.
+1. marks Groq as fallback in the UI
+2. keeps using the local planner
+3. waits for a cooldown period
+4. tries Groq again later
 
-Formation stability includes:
+The request payload is compacted before it is sent to Groq. Positions are rounded, velocity is reduced to speed, and output tokens are limited. This keeps the leader planning loop cheaper and more reliable.
 
-- safe formation spacing
-- higher separation pressure in formation mode
-- near-slot braking for all drone roles
-- overlap resolution after movement
-- damping and lower wander during formation settling
-- visual formation guide overlays
+## GitHub Pages and API Keys
 
-This is why the drones can form a V-shape or grid while still behaving like autonomous vehicles rather than instantly teleporting into place.
+GitHub Pages is static hosting. It can serve HTML, CSS, JavaScript, and assets, but it does not run a private backend process for your app.
 
-## 🧱 Hazards And Obstacles
+That means:
+
+```text
+GitHub Pages can host the simulation UI.
+GitHub Pages cannot safely host the Groq API key at runtime.
+GitHub Actions secrets are available during build, not after the static site is published.
+```
+
+Adding `GROQ_API_KEY` as a GitHub Actions secret would not solve runtime Groq access for GitHub Pages. The secret would be available during the build job, but the deployed site would still be static JavaScript running in the user's browser.
+
+You should not expose the Groq key as a `VITE_*` variable. Any `VITE_*` variable can be bundled into browser JavaScript and seen by users.
+
+### Deployment Options for Groq
+
+If you want Groq to work in a hosted production version, use one of these options:
+
+1. Deploy to a platform with serverless functions
+
+   Examples:
+
+   - Vercel
+   - Netlify Functions
+   - Cloudflare Workers
+   - Azure Static Web Apps
+   - Render
+   - Fly.io
+
+2. Keep GitHub Pages for the frontend and deploy a separate backend proxy
+
+   The frontend calls your backend:
+
+   ```text
+   GitHub Pages frontend -> secure backend proxy -> Groq API
+   ```
+
+3. Use local fallback only on GitHub Pages
+
+   This keeps the public demo safe and functional without any private API key.
+
+The current GitHub Pages deployment is best treated as a static demo with local fallback. The Groq route is meant for local development or a server-backed deployment.
+
+## Agent Communication Feed
+
+The Leader panel includes a communication feed that shows what the worker drones are reporting to the leader.
+
+Message types include:
+
+| Message | Meaning |
+| --- | --- |
+| `STATUS_REPORT` | Routine worker telemetry |
+| `LOW_ENERGY` | Drone asks for energy-aware routing |
+| `DISTRESS` | Drone reports low health |
+| `HAZARD_DETECTED` | Drone warns about nearby danger |
+| `LEADER_COMMAND` | Command broadcast through the message system |
+
+The feed is useful because it makes the coordination loop visible:
+
+```text
+worker reports state
+leader analyzes reports
+leader chooses command
+swarm reacts
+```
+
+## Drone Roles
+
+Each drone has a profile that changes its movement and decision behavior.
+
+| Role | Purpose | Behavior |
+| --- | --- | --- |
+| `Scout` | Explore and detect hazards | Faster, wider perception, more energy use |
+| `Defender` | Stabilize and protect | Slower, stronger separation, higher health |
+| `Worker` | Hold structure | Efficient, formation-focused, low wander |
+| `Relay` | Improve coordination | Stronger response to communication signals |
+
+The leader drone is assigned as a `Relay`, which fits the command-and-communication role.
+
+## Formation System
+
+The simulation supports multiple formations:
+
+| Formation | Purpose |
+| --- | --- |
+| `Scatter` | Loose independent motion |
+| `Flock` | Classic flocking behavior |
+| `Grid` | Structured slot-based arrangement |
+| `V-Shape` | Leader-forward formation |
+| `Circle` | Ring formation around the center |
+| `Leader` | Line behind a lead direction |
+| `Hexagon` | Compact multi-layer packing |
+| `Cross` | Diagonal branch formation |
+
+Formation stability uses several mechanisms:
+
+1. Safe minimum spacing
+
+   The spacing floor is high enough to avoid drones fighting the near-collision zone while they are technically in formation.
+
+2. Nearest-slot assignment
+
+   Formation slots are assigned to nearby drones rather than by raw array index.
+
+3. Velocity damping on reassignment
+
+   When a new formation is chosen, drones reduce velocity so they do not rush through neighboring slots.
+
+4. Near-slot braking
+
+   Drones slow down as they approach their assigned positions.
+
+5. Overlap resolution
+
+   If drones still overlap after movement, the simulation separates them and reduces sticking.
+
+6. Separation pressure
+
+   Formation mode increases separation so drones preserve physical space.
+
+These mechanisms make formations more stable while still keeping the motion visibly autonomous.
+
+## Steering Model
+
+Every drone computes steering from several forces:
+
+| Force | Description |
+| --- | --- |
+| Separation | Avoid nearby drones |
+| Alignment | Match nearby heading |
+| Cohesion | Stay connected to local group |
+| Formation Target | Move toward assigned formation slot |
+| Obstacle Avoidance | Repel from hazards and blocks |
+| Wander | Add controlled randomness |
+| Communication Response | React to drone messages and leader commands |
+
+The simulation integrates these forces into acceleration, velocity, position, rotation, pitch, and roll.
+
+## Hazards and Obstacles
+
+The environment includes:
 
 | Hazard | Effect |
 | --- | --- |
-| 🔴 `circle` | Basic radial keep-out pillar |
-| ◼️ `rect` | Block/corridor obstacle |
-| ⚡ `electrical_storm` | Damages health and creates unstable movement |
-| 🧲 `magnetic_field` | Drains energy and slows drones |
+| `circle` | Basic radial keep-out pillar |
+| `rect` | Box-shaped obstacle |
+| `electrical_storm` | Damages health and destabilizes movement |
+| `magnetic_field` | Drains energy and slows drones |
 
-Hazards influence local avoidance, message generation, collision risk, and leader decisions.
+Hazards influence:
 
-## 🏗️ Runtime Architecture
+- local obstacle avoidance
+- drone health
+- drone energy
+- hazard messages
+- leader decisions
+- collision risk
 
-```mermaid
-flowchart TD
-    UI[Dashboard UI] --> Sim[Simulation Engine]
-    UI --> Canvas[CanvasRenderer]
-    Sim --> Fleet[Drone Fleet]
-    Sim --> Env[Environment]
-    Sim --> Bus[MessageBus]
-    Bus --> Grid[SpatialGrid]
-    Fleet --> Agent[InternalAgent]
-    Fleet --> Telemetry[Drone Telemetry]
-    Telemetry --> Leader[LeaderAgent]
-    Leader --> GroqRoute[/api/leader-plan]
-    GroqRoute --> Groq[Groq Chat Completions]
-    Leader --> Commands[Leader Commands]
-    Commands --> Fleet
-    Sim --> Logs[Collision + Communication Logs]
-```
+## Collision Handling
 
-## 📁 Project Structure
+The simulator tracks both near-collisions and direct collisions.
 
-```text
-src/
-  App.tsx
-  main.tsx
-  index.css
-  swarm/
-    agents/            # Drone state and physics-facing entity logic
-    communication/     # Message bus
-    control/           # Shared swarm configuration
-    environment/       # Obstacles and hazards
-    internal_agent/    # Per-drone steering brain
-    leader/            # Groq-first leader planner and fallback logic
-    simulation/        # Core orchestrator
-    spatial_index/     # Neighbor lookup optimization
-    utils/             # Vector math
-    visualization/     # Dashboard and canvas renderer
-```
+Near-collisions:
 
-## 🧪 Local Development
+- mark drones as unstable
+- increase local separation pressure
+- can trigger hazard messages
+- show warning visuals on the canvas
+
+Direct collisions:
+
+- push overlapping drones apart
+- damp velocity
+- record collision events
+- update the collision log
+- show visual impact effects
+
+This makes the swarm self-correcting instead of permanently unstable after one bad interaction.
+
+## Dashboard
+
+The dashboard acts as the operator console.
+
+Main areas:
+
+| Panel | Purpose |
+| --- | --- |
+| Config | Formation, spacing, swarm size, autopilot, trails, hazards |
+| Leader | Groq/local brain status, leader command, worker messages |
+| Logs | Collision and incident feed |
+| Inspect | Per-drone telemetry and health details |
+
+The canvas supports:
+
+- click to set target
+- shift-click to place hazards
+- drag obstacles
+- wheel zoom
+- pan with middle click or Alt-drag
+- double-click to fit the simulation back into view
+
+## State Persistence
+
+The app can save and load mission state through browser `localStorage`.
+
+Saved state includes:
+
+- current tick
+- formation
+- behavior mode
+- spacing
+- movement configuration
+- autopilot waypoints
+- active waypoint index
+- obstacles
+- drone positions
+- drone velocities
+- energy and health
+- role profile
+- target offsets
+
+This is useful for repeatable experiments and demos.
+
+## Local Development
 
 ### Requirements
 
-- Node.js 20+
+- Node.js 20 or newer
 - npm
-- Optional: Groq API key for model-backed leader decisions
+- optional Groq API key for server-backed leader planning
 
-### Install
+### Install dependencies
 
 ```bash
 npm ci
 ```
 
-### Run
+### Run the app
 
 ```bash
 npm run dev
@@ -224,70 +438,158 @@ Vite usually starts at:
 http://localhost:3000/
 ```
 
-If ports are already in use, Vite will choose `3001`, `3002`, and so on.
+If that port is already in use, Vite will choose another port such as `3001` or `3002`.
 
-### Validate
+### Run checks
 
 ```bash
 npm run lint
 npm run build
 ```
 
-## 🚀 GitHub Pages Deployment
+`npm run lint` runs TypeScript checking with `tsc --noEmit`.
 
-This repository deploys the static app through GitHub Actions.
+`npm run build` creates the production Vite bundle.
 
-Required Pages setting:
+## Project Structure
+
+```text
+src/
+  App.tsx
+  main.tsx
+  index.css
+  swarm/
+    agents/
+      Drone.ts
+    communication/
+      MessageBus.ts
+    control/
+      SwarmConfig.ts
+    environment/
+      Environment.ts
+    internal_agent/
+      InternalAgent.ts
+    leader/
+      LeaderAgent.ts
+    simulation/
+      Simulation.ts
+    spatial_index/
+      SpatialGrid.ts
+    utils/
+      Vector2.ts
+    visualization/
+      CanvasRenderer.tsx
+      Dashboard.tsx
+```
+
+## GitHub Pages Deployment
+
+The project deploys the static frontend through GitHub Actions.
+
+GitHub Pages should be configured as:
 
 ```text
 Settings -> Pages -> Build and deployment -> Source -> GitHub Actions
 ```
 
-Deployment flow:
+Deployment workflow:
 
 1. Push to `main`.
-2. GitHub Actions installs dependencies.
-3. TypeScript checks run with `npm run lint`.
-4. Vite builds the app with the correct repository base path.
-5. The `dist/` artifact is uploaded to GitHub Pages.
-6. Pages publishes the site.
+2. GitHub Actions installs dependencies with `npm ci`.
+3. TypeScript checks run.
+4. Vite builds the app.
+5. The `dist/` directory is uploaded as a Pages artifact.
+6. GitHub Pages publishes the artifact.
 
-## ⚙️ Workflow
-
-The workflow lives at:
+The workflow file is:
 
 ```text
 .github/workflows/deploy-pages.yml
 ```
 
-It handles:
+The workflow also validates pull requests with lint and build checks.
 
-- ✅ pull request validation
-- ✅ dependency installation with `npm ci`
-- ✅ TypeScript checks
-- ✅ production build
-- ✅ GitHub Pages artifact upload
-- ✅ deployment from `main`
+## Deployment Workflow Details
 
-## 🧪 Experiments To Try
+The workflow has three logical stages:
 
-1. Switch from `Scatter` to `V-Shape` and watch the slot assignment settle.
-2. Add an `electrical_storm` near the leader and observe hazard messages.
-3. Lower energy by placing magnetic fields, then watch `CONSERVE_ENERGY` decisions.
-4. Open the Leader panel and watch worker drones report status to the commander.
-5. Enable Groq mode and compare Groq decisions against local fallback behavior.
-6. Increase drone count and tune spacing to see when formations become unstable.
+1. `validate`
 
-## 🧾 Why This Matters
+   Runs on pull requests and pushes.
 
-This simulation is useful for demonstrating:
+   It performs:
 
-- hierarchical multi-agent coordination
-- local perception with global strategy
-- LLM-assisted command planning
-- fallback-safe AI control loops
-- swarm stability under obstacles and communication pressure
-- visual explainability for agent-to-agent messaging
+   - checkout
+   - Node.js setup
+   - dependency installation
+   - TypeScript check
+   - production build
 
-It is not just “drones moving around.” It is a compact testbed for thinking about how autonomous units can report local reality to a leader, receive a mission-level command, and still preserve local safety.
+2. `build`
+
+   Runs only outside pull requests.
+
+   It builds the static Pages artifact.
+
+3. `deploy`
+
+   Runs only outside pull requests.
+
+   It deploys the uploaded artifact to GitHub Pages.
+
+This prevents pull requests from deploying while still validating that they build correctly.
+
+## Practical Experiments
+
+Try these scenarios:
+
+1. Start in `Scatter`, then switch to `V-Shape`.
+2. Open the Leader panel and watch status reports from workers.
+3. Place an `electrical_storm` near the formation path.
+4. Watch hazard reports appear in Agent Communications.
+5. Switch to `Grid` and lower/raise spacing to observe stability.
+6. Enable Auto Pilot and place obstacles near a waypoint.
+7. Configure Groq locally and compare Groq commands against local fallback.
+8. Trigger a Groq rate limit and confirm the local fallback remains active.
+9. Save a stable state, disturb the environment, then reload the state.
+10. Increase drone count and inspect how spatial indexing keeps neighbor queries practical.
+
+## Current Limitations
+
+- GitHub Pages cannot securely run the Groq API route.
+- Groq calls are intentionally low-frequency to avoid rate limits.
+- The physics is simplified and designed for visual simulation, not real drone flight.
+- Formations are 2D canvas formations, not real-world 3D trajectories.
+- The leader makes high-level decisions only; low-level motion remains local.
+
+## Future Improvements
+
+Possible next steps:
+
+- serverless production deployment for Groq-backed planning
+- richer mission objectives
+- terrain and altitude layers
+- separate communication range simulation
+- replay/export of mission logs
+- stronger formation assignment algorithms
+- real-time charting of energy and health
+- configurable Groq model and planning interval from the UI
+- multi-leader or backup-leader behavior
+- obstacle-aware path planning before slot assignment
+
+## Summary
+
+Virtual Swarm Drone Coordination demonstrates a layered approach to swarm simulation:
+
+```text
+local drone physics
++ neighbor communication
++ formation control
++ hazard response
++ leader command planning
++ optional Groq model reasoning
++ local fallback safety
+```
+
+The result is a simulation where drones are not just moving dots. They are worker agents reporting to a leader, reacting to local conditions, preserving formation safety, and adapting to mission-level commands.
 
